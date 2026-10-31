@@ -1,6 +1,6 @@
 # Whatsapp-sdk
 
-`@eva_solutions/whatsapp-sdk`: cliente TypeScript del servicio Whatsapp-api (`D:/GitHub/Proyecto Global/Whatsapp Service/Whatsapp-api`). Paquete único, cinco subpaths, Result Pattern, única dependencia de runtime: `zod` (sin dependencia del auth-sdk: el consumidor pasa su proveedor de tokens).
+`@eva_solutions/whatsapp-sdk`: cliente TypeScript del servicio Whatsapp-api (privado). Paquete único, cinco subpaths, Result Pattern, única dependencia de runtime: `zod` (sin dependencia del auth-sdk: el consumidor pasa su proveedor de tokens).
 
 ## Cómo trabajamos
 
