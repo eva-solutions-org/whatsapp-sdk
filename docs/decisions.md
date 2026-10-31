@@ -208,3 +208,29 @@ Enviar JSON cuando se usa `url`: descartada porque la API lo rechaza.
 - (−) Con `FormData` el body firmado en S2S sería vacío (la API respondería `401`): el autenticador S2S declara `soportaMultipart: false` y el cliente rechaza un `FormData` con `400` local. No aplica hoy porque la media no se envía por `./internal` (que usa `mediaUrl` en JSON).
 
 **Fuente**: Engram `whatsapp-sdk T2: media send es multipart-only`.
+
+---
+
+## ADR-008 — `./internal` solo HMAC; Auth - API conserva su adaptador JWT
+
+**Estado**: Vigente
+**Fecha**: 2026-10-31
+
+### Contexto
+
+`POST /v1/internal/messages/*` acepta dos credenciales: HMAC S2S (`X-Eva-*`) de un service client registrado en Whatsapp-api, o un JWT de servicio en `Authorization: Bearer`. El JWT solo puede emitirlo Auth - API: es el único firmante cuya clave Whatsapp-api ya conoce (el JWKS de Auth, que también usa para el login). Auth adoptó el JWT para no compartir un secreto con Whatsapp-api y cortar la dependencia circular de arranque entre ambos (ADR 0006 de Auth - API). Hoy Auth es el único que llama a `/v1/internal/*`.
+
+### Decisión
+
+`./internal` firma solo con HMAC. Auth - API no usa este SDK: conserva su adaptador propio, verificado en sus tests contra el `verifyServiceJwt` real. Un servicio nuevo que necesite enviar mensajes se registra como service client (`./admin`, `serviceClients.crear` y `telefonosOrigen.agregar`) y usa `crearClienteInterno`.
+
+### Alternativas consideradas
+
+- **Firmante JWT inyectable en `./internal` para que Auth use el SDK**: descartada por ahora. Sería una extensión para un solo consumidor, el ahorro es poco (unas 90 líneas ya probadas) y agrega un bundle en Workers y versiones coordinadas entre repos.
+- **Volver Auth a HMAC**: descartada. Reintroduce el secreto compartido y la dependencia circular que el ADR 0006 de Auth eliminó.
+
+### Consecuencias
+
+- (+) Los consumidores nuevos funcionan hoy con el SDK, sin cambios en ningún repo.
+- (−) El contrato de `/v1/internal/messages/send` existe en dos lugares (este SDK y el adaptador de Auth).
+- **Cuándo revisarlo**: el objetivo de la plataforma es que Auth emita JWT de servicio a todos los servicios (OAuth2 _client credentials_) antes de conectar un segundo producto, porque con varios productos y servicios compartidos los secretos HMAC se multiplican por cada par. En ese mismo cambio, `./internal` agrega Bearer y Auth migra a este SDK.
