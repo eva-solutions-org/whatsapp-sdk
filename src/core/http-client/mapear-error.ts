@@ -104,7 +104,7 @@ const recortarMensaje = (mensaje: string): string =>
  * Extrae los datos del cuerpo de error de la API. Soporta los dos shapes reales:
  * - `{ error: string }` (errores de app, rate limit) con `detalles` opcional en los 422
  *   (`{ error: 'Body inválido', detalles: ZodError.flatten() }`).
- * - `{ error: { code, message } }` (401 S2S y errores del auth-sdk).
+ * - `{ error: { code, message } }` (401/403 de token de servicio y errores del auth-sdk).
  *
  * @internal
  */
@@ -174,6 +174,28 @@ export const mapearErrorParseo = (mensaje: string, requestId?: string): ErrorRes
 export const mapearErrorPeticion = (mensaje: string): ErrorResultado =>
   crearError(400, "local", mensaje);
 
-/** Fallo del autenticador al preparar headers (p. ej. secreto S2S inutilizable): 500, origen `local`. */
-export const mapearErrorAutenticacion = (): ErrorResultado =>
-  crearError(500, "local", "No se pudo autenticar la petición");
+/** Códigos de error OAuth (RFC 6749 §5.2, RFC 8707): `invalid_client`, `temporarily_unavailable`... */
+const REGEX_CODIGO_NO_SENSIBLE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * Extrae el `code` de un error del proveedor de tokens SOLO si parece un código OAuth
+ * (minúsculas y `_`). Los códigos de red (`ECONNREFUSED`) y cualquier mensaje libre se descartan.
+ */
+const extraerCodigoNoSensible = (err: unknown): string | undefined => {
+  if (!esObjeto(err)) {
+    return undefined;
+  }
+  const code = err["code"];
+  return typeof code === "string" && REGEX_CODIGO_NO_SENSIBLE.test(code) ? code : undefined;
+};
+
+/**
+ * Fallo del autenticador al preparar headers (p. ej. `obtenerToken` falló): 500, origen `local`.
+ * Nunca incluye el mensaje del error; solo un `code` OAuth no sensible, en `detalles`.
+ */
+export const mapearErrorAutenticacion = (causa?: unknown): ErrorResultado => {
+  const code = extraerCodigoNoSensible(causa);
+  return crearError(500, "local", "No se pudo autenticar la petición", {
+    ...(code !== undefined && { detalles: { code } }),
+  });
+};

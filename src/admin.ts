@@ -1,19 +1,25 @@
 /**
  * Subpath `@eva_solutions/whatsapp-sdk/admin`: cliente de administración (`/v1/admin/*`),
- * firmado con HMAC S2S de un service client con scope `admin`.
+ * autenticado con un token Bearer de servicio (`aud: whatsapp-api`, permiso `admin`) emitido por
+ * Auth. El SDK no depende del auth-sdk: el consumidor pasa su proveedor de tokens.
  *
  * ```ts
- * const admin = crearClienteAdmin({ baseUrl, clientId, secretoHex });
+ * const admin = crearClienteAdmin({
+ *   baseUrl,
+ *   obtenerToken: () => proveedor.getToken(),
+ *   invalidarToken: proveedor.invalidate, // recibe el token rechazado
+ * });
  * const r = await admin.serviceClients.listar();
  * ```
  *
- * Cada operación retorna `Promise<Resultado<T>>`. Los POST no se reintentan (cada firma lleva un
- * nonce de un solo uso). No incluye `/v1/admin/billing/webhook/pagos`: es el webhook entrante
+ * Cada operación retorna `Promise<Resultado<T>>`. Ante un `401` se invoca `invalidarToken` y la
+ * request se reintenta UNA vez con un token nuevo (también los POST: el 401 significa que el
+ * servidor no la procesó); fuera de eso los POST no se reintentan. No incluye `/v1/admin/billing/webhook/pagos`: es el webhook entrante
  * del procesador de pagos, no una operación de administración.
  */
 
-import { crearHttpClientS2S } from "./core/cliente/index.js";
-import type { OpcionesClienteS2S } from "./core/cliente/index.js";
+import { crearHttpClientConToken } from "./core/cliente/index.js";
+import type { OpcionesClienteConToken } from "./core/cliente/index.js";
 import { crearFacadeAuditoria } from "./features/admin-auditoria/index.js";
 import type { FacadeAuditoria } from "./features/admin-auditoria/index.js";
 import { crearFacadeBillingAdmin } from "./features/admin-billing/index.js";
@@ -43,13 +49,14 @@ export interface ClienteAdmin {
 /**
  * Crea el cliente de administración.
  *
- * `secretoHex` es el secreto del service client (hex); nunca aparece en mensajes de error.
+ * `obtenerToken` entrega el token de servicio vigente (el proveedor lo cachea y renueva); el token
+ * nunca aparece en mensajes de error.
  *
- * @throws {ErrorConfiguracion} `clientId`, `secretoHex`, `baseUrl`, `timeout` o `reintentos`
- *   inválidos (error de programación, no flujo de negocio).
+ * @throws {ErrorConfiguracion} `obtenerToken`, `invalidarToken`, `baseUrl`, `timeout` o
+ *   `reintentos` inválidos (error de programación, no flujo de negocio).
  */
-export const crearClienteAdmin = (opciones: OpcionesClienteS2S): ClienteAdmin => {
-  const http = crearHttpClientS2S(opciones);
+export const crearClienteAdmin = (opciones: OpcionesClienteConToken): ClienteAdmin => {
+  const http = crearHttpClientConToken(opciones);
   return {
     qrSistema: crearFacadeQrSistema(http),
     sesiones: crearFacadeSesiones(http),
@@ -61,8 +68,8 @@ export const crearClienteAdmin = (opciones: OpcionesClienteS2S): ClienteAdmin =>
   };
 };
 
-export { crearHttpClientS2S } from "./core/cliente/index.js";
-export type { OpcionesClienteS2S } from "./core/cliente/index.js";
+export { crearHttpClientConToken } from "./core/cliente/index.js";
+export type { OpcionesClienteConToken } from "./core/cliente/index.js";
 export type { HttpClient, RespuestaBinaria } from "./core/http-client/index.js";
 export { ErrorConfiguracion } from "./core/errors/index.js";
 export { esExitoso, esFallido } from "./core/types/index.js";
@@ -121,12 +128,10 @@ export type {
   ActualizarServiceClientInput,
   Allowlist,
   CrearServiceClientInput,
+  IdServiceClientInput,
   ListaServiceClients,
   ListarServiceClientsInput,
-  SecretRotado,
   ServiceClient,
-  ServiceClientCreado,
-  SlugInput,
   TelefonoOrigenInput,
 } from "./features/admin-service-clients/index.js";
 export type { FacadeSesiones } from "./features/admin-sesiones/index.js";

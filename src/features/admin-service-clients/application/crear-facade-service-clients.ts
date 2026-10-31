@@ -6,7 +6,6 @@ import {
   iterarServiceClients,
   listarServiceClients,
   obtenerServiceClient,
-  rotarSecretServiceClient,
 } from "./operaciones-service-client.js";
 import {
   agregarTelefonoOrigen,
@@ -14,9 +13,12 @@ import {
   quitarTelefonoOrigen,
 } from "./operaciones-telefonos-origen.js";
 
-/** Service clients (credenciales S2S) y la allowlist de teléfonos remitentes de cada uno. */
+/**
+ * Registro local de service clients de Whatsapp-api (sin secreto ni permisos: viven en Auth) y la
+ * allowlist de teléfonos remitentes de cada uno. Se identifican por el id de Auth (`sub` del token).
+ */
 export const crearFacadeServiceClients = (http: HttpClient) => ({
-  /** Crea un client. La respuesta trae su `secret` en texto plano, una única vez. */
+  /** Registra un service client de Auth (por su id) para usar `./internal`. */
   crear: crearServiceClient(http),
   listar: listarServiceClients(http),
   /** Recorre todos los clients (async iterator). */
@@ -25,8 +27,6 @@ export const crearFacadeServiceClients = (http: HttpClient) => ({
   actualizar: actualizarServiceClient(http),
   /** Hard delete. */
   eliminar: eliminarServiceClient(http),
-  /** Genera un secret nuevo; el anterior deja de servir al instante. */
-  rotarSecret: rotarSecretServiceClient(http),
   /** Allowlist de `sourcePhone` desde los que el client puede enviar en `./internal`. */
   telefonosOrigen: {
     listar: listarTelefonosOrigen(http),

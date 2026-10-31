@@ -1,7 +1,7 @@
 import { recolectar } from "../../helpers/iteradores.js";
 import { describe, expect, it } from "vitest";
 import { respuestaError, respuestaJson, respuestaJsonData } from "../../helpers/mock-fetch.js";
-import { crearAdminPrueba, esperarHeadersS2S, peticion } from "../../helpers/ayudas-s2s.js";
+import { crearAdminPrueba, esperarBearer, peticion } from "../../helpers/ayudas-token.js";
 
 const PRECIO = {
   id: 3,
@@ -22,7 +22,7 @@ describe("admin.billing.precios", () => {
     const enviada = peticion(fetchMock);
     expect(enviada.metodo).toBe("GET");
     expect(enviada.ruta).toBe("/v1/admin/billing/precios");
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("crear hace POST con { moneda, costoPorMensaje } y desenvuelve el 201", async () => {
@@ -35,7 +35,7 @@ describe("admin.billing.precios", () => {
     expect(enviada.metodo).toBe("POST");
     expect(enviada.ruta).toBe("/v1/admin/billing/precios");
     expect(enviada.cuerpo).toEqual({ moneda: "USD", costoPorMensaje: "0.0025" });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("crear mapea el 409 de moneda duplicada", async () => {
@@ -77,7 +77,7 @@ describe("admin.billing.precios", () => {
     expect(enviada.metodo).toBe("PUT");
     expect(enviada.ruta).toBe("/v1/admin/billing/precios/USD");
     expect(enviada.cuerpo).toEqual({ costoPorMensaje: "0.0030", activa: false });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("actualizar mapea el 404 de moneda sin precio", async () => {
@@ -101,7 +101,7 @@ describe("admin.billing.precios", () => {
     const enviada = peticion(fetchMock);
     expect(enviada.metodo).toBe("DELETE");
     expect(enviada.ruta).toBe("/v1/admin/billing/precios/ARS");
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 });
 
@@ -128,7 +128,7 @@ describe("admin.billing.ajustarSaldo", () => {
       descripcion: "Refund por baja de cuenta solicitada por el usuario",
       forzar: true,
     });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("mapea el 422 de monto sobre el cap admin sin forzar", async () => {
@@ -192,7 +192,7 @@ describe("admin.billing.cambiarMoneda", () => {
       nuevaMoneda: "COP",
       tasaConversion: 1000,
     });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("mapea el 409 de moneda actual desfasada o pagos pendientes", async () => {
@@ -231,7 +231,7 @@ describe("admin.billing.configurar", () => {
     expect(enviada.metodo).toBe("PUT");
     expect(enviada.ruta).toBe("/v1/admin/billing/api-key/5491155553333/config");
     expect(enviada.cuerpo).toEqual({ costoPorMensaje: "0.0030", recibirEntrantes: false });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("mapea el 400 de config vacía", async () => {
@@ -281,7 +281,7 @@ describe("admin.billing.listarMovimientos", () => {
     expect(enviada.metodo).toBe("GET");
     expect(enviada.ruta).toBe("/v1/admin/billing/api-key/5491155553333/movimientos");
     expect(enviada.query).toEqual({ page: "1", limit: "20", tipo: "recarga" });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("mapea el 404 de API key inexistente", async () => {

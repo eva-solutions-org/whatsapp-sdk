@@ -7,50 +7,46 @@ import { iterarCursor } from "../../../core/paginacion/index.js";
 import {
   actualizarServiceClientInputSchema,
   crearServiceClientInputSchema,
+  idServiceClientInputSchema,
   listaServiceClientsSchema,
   listarServiceClientsInputSchema,
-  secretRotadoSchema,
-  serviceClientCreadoSchema,
   serviceClientSchema,
-  slugInputSchema,
 } from "../domain/index.js";
 import type {
   ActualizarServiceClientInput,
   CrearServiceClientInput,
+  IdServiceClientInput,
   ListaServiceClients,
   ListarServiceClientsInput,
-  SecretRotado,
   ServiceClient,
-  ServiceClientCreado,
-  SlugInput,
 } from "../domain/index.js";
 
 export const RUTA_SERVICE_CLIENTS = "/v1/admin/service-clients";
 
-const rutaDe = (slug: string): string => `${RUTA_SERVICE_CLIENTS}/${segmentoRuta(slug)}`;
+const rutaDe = (id: string): string => `${RUTA_SERVICE_CLIENTS}/${segmentoRuta(id)}`;
 
 /**
- * POST /v1/admin/service-clients. 409 si el slug ya existe. La respuesta incluye `secret` en
- * texto plano: es la única vez que se expone, guárdalo de inmediato.
+ * POST /v1/admin/service-clients: crea el registro local de un service client de Auth, por su
+ * id (el `sub` de sus tokens). No genera secreto ni permisos. 409 si el id ya está registrado.
  */
 export const crearServiceClient =
   (http: HttpClient) =>
   async (
     entrada: CrearServiceClientInput,
     opciones?: OpcionesOperacion,
-  ): Promise<Resultado<ServiceClientCreado>> => {
+  ): Promise<Resultado<ServiceClient>> => {
     const validada = validarEntrada(crearServiceClientInputSchema, entrada);
     if (!validada.success) {
       return validada;
     }
     return http.post(RUTA_SERVICE_CLIENTS, validada.data, {
-      schemaRespuesta: serviceClientCreadoSchema,
+      schemaRespuesta: serviceClientSchema,
       signal: opciones?.signal,
       timeout: opciones?.timeout,
     });
   };
 
-/** GET /v1/admin/service-clients. Paginación por cursor; los items no traen el secret. */
+/** GET /v1/admin/service-clients. Paginación por cursor. */
 export const listarServiceClients =
   (http: HttpClient) =>
   async (
@@ -69,25 +65,25 @@ export const listarServiceClients =
     });
   };
 
-/** GET /v1/admin/service-clients/{slug}. 404 si no existe. */
+/** GET /v1/admin/service-clients/{id}. 404 si no existe. */
 export const obtenerServiceClient =
   (http: HttpClient) =>
-  async (entrada: SlugInput, opciones?: OpcionesOperacion): Promise<Resultado<ServiceClient>> => {
-    const validada = validarEntrada(slugInputSchema, entrada);
+  async (
+    entrada: IdServiceClientInput,
+    opciones?: OpcionesOperacion,
+  ): Promise<Resultado<ServiceClient>> => {
+    const validada = validarEntrada(idServiceClientInputSchema, entrada);
     if (!validada.success) {
       return validada;
     }
-    return http.get(rutaDe(validada.data.slug), {
+    return http.get(rutaDe(validada.data.id), {
       schemaRespuesta: serviceClientSchema,
       signal: opciones?.signal,
       timeout: opciones?.timeout,
     });
   };
 
-/**
- * PATCH /v1/admin/service-clients/{slug} (parcial; sin ningún campo la API responde 400).
- * 409 si deshabilitarlo o quitarle el scope `admin` deja al sistema sin un admin habilitado.
- */
+/** PATCH /v1/admin/service-clients/{id} (parcial; sin ningún campo la API responde 400). */
 export const actualizarServiceClient =
   (http: HttpClient) =>
   async (
@@ -98,8 +94,8 @@ export const actualizarServiceClient =
     if (!validada.success) {
       return validada;
     }
-    const { slug, ...cuerpo } = validada.data;
-    return http.patch(rutaDe(slug), cuerpo, {
+    const { id, ...cuerpo } = validada.data;
+    return http.patch(rutaDe(id), cuerpo, {
       schemaRespuesta: serviceClientSchema,
       signal: opciones?.signal,
       timeout: opciones?.timeout,
@@ -107,42 +103,23 @@ export const actualizarServiceClient =
   };
 
 /**
- * DELETE /v1/admin/service-clients/{slug} (hard delete). 409 si es el último service client
- * admin habilitado; 400 para la fila reservada `auth-service`.
+ * DELETE /v1/admin/service-clients/{id} (hard delete del registro local; el service client sigue
+ * existiendo en Auth).
  */
 export const eliminarServiceClient =
   (http: HttpClient) =>
   async (
-    entrada: SlugInput,
+    entrada: IdServiceClientInput,
     opciones?: OpcionesOperacion,
   ): Promise<Resultado<MensajeConfirmacion>> => {
-    const validada = validarEntrada(slugInputSchema, entrada);
+    const validada = validarEntrada(idServiceClientInputSchema, entrada);
     if (!validada.success) {
       return validada;
     }
-    return http.delete(rutaDe(validada.data.slug), {
+    return http.delete(rutaDe(validada.data.id), {
       schemaRespuesta: mensajeConfirmacionSchema,
       // Un reintento tras un éxito perdido recibiría 404 y ocultaría el resultado real.
       reintentar: false,
-      signal: opciones?.signal,
-      timeout: opciones?.timeout,
-    });
-  };
-
-/**
- * POST /v1/admin/service-clients/{slug}/rotate-secret. El secret anterior deja de funcionar
- * al instante (sin ventana de solape); el nuevo viene en texto plano solo en esta respuesta.
- * 400 para la fila `auth-service` (firma con JWT, no tiene secret HMAC).
- */
-export const rotarSecretServiceClient =
-  (http: HttpClient) =>
-  async (entrada: SlugInput, opciones?: OpcionesOperacion): Promise<Resultado<SecretRotado>> => {
-    const validada = validarEntrada(slugInputSchema, entrada);
-    if (!validada.success) {
-      return validada;
-    }
-    return http.post(`${rutaDe(validada.data.slug)}/rotate-secret`, undefined, {
-      schemaRespuesta: secretRotadoSchema,
       signal: opciones?.signal,
       timeout: opciones?.timeout,
     });

@@ -1,19 +1,25 @@
 /**
  * Subpath `@eva_solutions/whatsapp-sdk/internal`: envío interno de mensajes
- * (`/v1/internal/*`), firmado con HMAC S2S de un service client.
+ * (`/v1/internal/*`), autenticado con un token Bearer de servicio (`aud: whatsapp-api`, permiso
+ * por ruta) emitido por Auth. El SDK no depende del auth-sdk: el consumidor pasa su proveedor.
  *
  * ```ts
- * const interno = crearClienteInterno({ baseUrl, clientId, secretoHex });
+ * const interno = crearClienteInterno({
+ *   baseUrl,
+ *   obtenerToken: () => proveedor.getToken(),
+ *   invalidarToken: proveedor.invalidate, // recibe el token rechazado
+ * });
  * const r = await interno.mensajes.enviar({ phone, message, sourcePhone });
  * ```
  *
- * Solo HMAC S2S (headers `X-Eva-*`). La API acepta también un JWT de servicio en
- * `Authorization: Bearer`, pero ese camino es exclusivo de Auth - API y este SDK no lo
- * implementa. Los POST no se reintentan (nonce de un solo uso).
+ * Ante un `401` (token inválido o vencido) se invoca `invalidarToken` y la request se reintenta
+ * UNA vez con un token nuevo, también el POST de envío: el 401 significa que la API no lo procesó.
+ * Un `403` indica permiso insuficiente, `sub` sin registro habilitado o `sourcePhone` fuera de la
+ * allowlist. Fuera del 401, los POST no se reintentan.
  */
 
-import { crearHttpClientS2S } from "./core/cliente/index.js";
-import type { OpcionesClienteS2S } from "./core/cliente/index.js";
+import { crearHttpClientConToken } from "./core/cliente/index.js";
+import type { OpcionesClienteConToken } from "./core/cliente/index.js";
 import { crearFacadeMensajesInternos } from "./features/internal-mensajes/index.js";
 import type { FacadeMensajesInternos } from "./features/internal-mensajes/index.js";
 
@@ -25,17 +31,18 @@ export interface ClienteInterno {
 /**
  * Crea el cliente interno.
  *
- * `secretoHex` es el secreto del service client (hex); nunca aparece en mensajes de error.
+ * `obtenerToken` entrega el token de servicio vigente (el proveedor lo cachea y renueva); el token
+ * nunca aparece en mensajes de error.
  *
- * @throws {ErrorConfiguracion} `clientId`, `secretoHex`, `baseUrl`, `timeout` o `reintentos`
- *   inválidos (error de programación, no flujo de negocio).
+ * @throws {ErrorConfiguracion} `obtenerToken`, `invalidarToken`, `baseUrl`, `timeout` o
+ *   `reintentos` inválidos (error de programación, no flujo de negocio).
  */
-export const crearClienteInterno = (opciones: OpcionesClienteS2S): ClienteInterno => ({
-  mensajes: crearFacadeMensajesInternos(crearHttpClientS2S(opciones)),
+export const crearClienteInterno = (opciones: OpcionesClienteConToken): ClienteInterno => ({
+  mensajes: crearFacadeMensajesInternos(crearHttpClientConToken(opciones)),
 });
 
-export { crearHttpClientS2S } from "./core/cliente/index.js";
-export type { OpcionesClienteS2S } from "./core/cliente/index.js";
+export { crearHttpClientConToken } from "./core/cliente/index.js";
+export type { OpcionesClienteConToken } from "./core/cliente/index.js";
 export type { HttpClient } from "./core/http-client/index.js";
 export { ErrorConfiguracion } from "./core/errors/index.js";
 export { esExitoso, esFallido } from "./core/types/index.js";

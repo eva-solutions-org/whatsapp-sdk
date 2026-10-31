@@ -7,7 +7,7 @@ import { defineConfig } from "tsdown";
  * consumidor en runtime con `baseUrl`.
  *
  * Entries (un subpath por superficie): `index` (x-api-key), `webhooks`, `ws`,
- * `admin` (S2S) e `internal` (S2S). Única dependencia runtime: zod.
+ * `admin` (Bearer) e `internal` (Bearer). Única dependencia runtime: zod.
  */
 
 export default defineConfig([

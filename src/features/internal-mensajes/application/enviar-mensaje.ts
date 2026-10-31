@@ -6,14 +6,16 @@ import { enviarMensajeInputSchema, mensajeEnviadoSchema } from "../domain/index.
 import type { EnviarMensajeInput, MensajeEnviado } from "../domain/index.js";
 
 /**
- * POST /v1/internal/messages/send, firmado con HMAC S2S. Texto (`message`) o media
+ * POST /v1/internal/messages/send con token Bearer de servicio. Texto (`message`) o media
  * (`mediaUrl` + `mediaType`).
  *
- * No se reintenta (POST con nonce de un solo uso). Un fallo por timeout o red es ambiguo: el
- * mensaje pudo salir. Errores relevantes, todos como
- * `{ success: false, codigo }`:
- * - 401: firma/timestamp/replay/cliente desconocido (`codigoApi` trae el code S2S).
- * - 403: scope insuficiente para el tipo de mensaje, o `sourcePhone` fuera de la allowlist.
+ * Solo se reintenta ante un 401 (una vez, con token nuevo: la API no procesó el envío). Un fallo
+ * por timeout o red es ambiguo: el mensaje pudo salir y no se reintenta. Errores relevantes, todos
+ * como `{ success: false, codigo }`:
+ * - 401: token inválido, vencido o de otra audiencia (`codigoApi` trae el code de la API) tras
+ *   el reintento con token nuevo.
+ * - 403: permiso insuficiente en el token para el tipo de mensaje, `sub` sin registro habilitado
+ *   o `sourcePhone` fuera de la allowlist.
  * - 422: body inválido (`detalles`) o `sourcePhone` desconocido.
  * - 429: rate limit (`retryAfter`).
  * - 503: la sesión del `sourcePhone` no está disponible.

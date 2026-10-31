@@ -91,7 +91,6 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/cli": "^2.31.0",
-    "@eva_solutions/auth-sdk": "file:vendor/eva_solutions-auth-sdk-2.0.1-shared-contracts-s4-fix8.tgz",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.7",
     "oxfmt": "^0.42.0",

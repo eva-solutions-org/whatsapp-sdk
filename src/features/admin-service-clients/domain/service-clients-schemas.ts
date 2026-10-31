@@ -1,28 +1,30 @@
 import { z } from "zod";
 import { telefonoSchema } from "../../../core/validacion/index.js";
 
-/** Slug único del service client (kebab-case, 3 a 64 caracteres). */
-const slugSchema = z.string().min(3).max(64);
+/** Id interno del service client en Auth (uuid): es el `sub` de sus tokens. */
+const idSchema = z.uuid();
 
-const scopesSchema = z.array(z.string().min(1));
+/** Slug informativo del service client en Auth (`client_id` del token), 3 a 64 caracteres. */
+const clientIdSchema = z.string().min(3).max(64);
 
 // ── Respuestas ──
 
+/**
+ * Registro local de un service client en Whatsapp-api. No guarda secreto ni permisos: las
+ * credenciales viven en Auth y los permisos viajan en el token.
+ */
 export const serviceClientSchema = z.object({
+  /** `sub` del token: id interno estable del service client en Auth. */
   id: z.string(),
-  slug: z.string(),
+  /** Slug informativo (`client_id` del token): logs y UI, no identifica. */
+  clientId: z.string(),
   name: z.string(),
   enabled: z.boolean(),
-  scopes: z.array(z.string()),
-  lastUsedAt: z.string().nullable(),
+  allowedSourcePhones: z.array(z.string()),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type ServiceClient = z.infer<typeof serviceClientSchema>;
-
-/** Solo en la creación: `secret` (hex en texto plano) no se vuelve a exponer. */
-export const serviceClientCreadoSchema = serviceClientSchema.extend({ secret: z.string() });
-export type ServiceClientCreado = z.infer<typeof serviceClientCreadoSchema>;
 
 /** Respuesta `{ data, nextCursor }`: el core no la desenvuelve, el schema ve el JSON completo. */
 export const listaServiceClientsSchema = z.object({
@@ -31,16 +33,8 @@ export const listaServiceClientsSchema = z.object({
 });
 export type ListaServiceClients = z.infer<typeof listaServiceClientsSchema>;
 
-export const secretRotadoSchema = z.object({
-  slug: z.string(),
-  /** Nuevo secret en texto plano. Es la única vez que se expone; el anterior ya no sirve. */
-  secret: z.string(),
-  rotatedAt: z.string(),
-});
-export type SecretRotado = z.infer<typeof secretRotadoSchema>;
-
 export const allowlistSchema = z.object({
-  slug: z.string(),
+  id: z.string(),
   allowedSourcePhones: z.array(z.string()),
 });
 export type Allowlist = z.infer<typeof allowlistSchema>;
@@ -48,12 +42,14 @@ export type Allowlist = z.infer<typeof allowlistSchema>;
 // ── Entradas ──
 
 export const crearServiceClientInputSchema = z.object({
-  slug: slugSchema,
+  /** Id del service client en Auth (el `sub` de sus tokens). */
+  id: idSchema,
+  clientId: clientIdSchema,
   name: z.string().min(1).max(255),
-  /** Al menos uno, p. ej. `messages:send:text`, `messages:send:media`, `admin`. */
-  scopes: scopesSchema.min(1),
   /** Default de la API: `true`. */
   enabled: z.boolean().optional(),
+  /** Teléfonos remitentes permitidos en `./internal`. Default de la API: ninguno. */
+  allowedSourcePhones: z.array(telefonoSchema).optional(),
 });
 export type CrearServiceClientInput = z.input<typeof crearServiceClientInputSchema>;
 
@@ -65,19 +61,19 @@ export const listarServiceClientsInputSchema = z.object({
 });
 export type ListarServiceClientsInput = z.input<typeof listarServiceClientsInputSchema>;
 
-export const slugInputSchema = z.object({ slug: slugSchema });
-export type SlugInput = z.input<typeof slugInputSchema>;
+export const idServiceClientInputSchema = z.object({ id: idSchema });
+export type IdServiceClientInput = z.input<typeof idServiceClientInputSchema>;
 
 export const actualizarServiceClientInputSchema = z.object({
-  slug: slugSchema,
+  id: idSchema,
+  clientId: clientIdSchema.optional(),
   name: z.string().min(1).max(255).optional(),
-  scopes: scopesSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type ActualizarServiceClientInput = z.input<typeof actualizarServiceClientInputSchema>;
 
 export const telefonoOrigenInputSchema = z.object({
-  slug: slugSchema,
+  id: idSchema,
   phone: telefonoSchema,
 });
 export type TelefonoOrigenInput = z.input<typeof telefonoOrigenInputSchema>;

@@ -1,5 +1,5 @@
 /**
- * Error de programación al configurar el SDK (apiKey, baseUrl, secreto S2S o timeout
+ * Error de programación al configurar el SDK (apiKey, baseUrl, proveedor de tokens o timeout
  * inválidos). Se lanza de forma síncrona al crear un cliente.
  *
  * Es la ÚNICA excepción que el SDK lanza fuera de iteradores y del cliente WebSocket:

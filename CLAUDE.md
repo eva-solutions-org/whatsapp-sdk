@@ -1,6 +1,6 @@
 # Whatsapp-sdk
 
-`@eva_solutions/whatsapp-sdk`: cliente TypeScript del servicio Whatsapp-api (`D:/GitHub/Proyecto Global/Whatsapp Service/Whatsapp-api`). Paquete único, cinco subpaths, Result Pattern, única dependencia de runtime: `zod`.
+`@eva_solutions/whatsapp-sdk`: cliente TypeScript del servicio Whatsapp-api (`D:/GitHub/Proyecto Global/Whatsapp Service/Whatsapp-api`). Paquete único, cinco subpaths, Result Pattern, única dependencia de runtime: `zod` (sin dependencia del auth-sdk: el consumidor pasa su proveedor de tokens).
 
 ## Cómo trabajamos
 
@@ -30,17 +30,17 @@ Scripts (`pnpm run <script>`):
 | `.`          | `src/index.ts`    | `crearCliente` (x-api-key) y tipos compartidos |
 | `./webhooks` | `src/webhooks.ts` | Verificación de firma HMAC y eventos           |
 | `./ws`       | `src/ws.ts`       | Cliente WebSocket de eventos en tiempo real    |
-| `./admin`    | `src/admin.ts`    | Cliente de administración (firma S2S)          |
-| `./internal` | `src/internal.ts` | Envío interno de mensajes (firma S2S)          |
+| `./admin`    | `src/admin.ts`    | Cliente de administración (token Bearer)       |
+| `./internal` | `src/internal.ts` | Envío interno de mensajes (token Bearer)       |
 
-Otros: `src/core/` (cliente, http-client, s2s, validación, paginación, errores, tipos), `src/features/<nombre>/{domain,application}` (un feature por área), `tests/` (Vitest `*.mock.test.ts`, `tests/s2s/` es el test de contrato contra `@eva_solutions/auth-sdk`), `vendor/` (tarball de `@eva_solutions/auth-sdk`, solo devDependency), `.changeset/` (cambios pendientes).
+Otros: `src/core/` (cliente, http-client, validación, paginación, errores, tipos), `src/features/<nombre>/{domain,application}` (un feature por área), `tests/` (Vitest `*.mock.test.ts`), `.changeset/` (cambios pendientes).
 
 ### Índice de `docs/`
 
 | Doc                                       | Contenido                                                  |
 | ----------------------------------------- | ---------------------------------------------------------- |
 | [api.md](docs/api.md)                     | Referencia de la API pública por subpath, códigos de error |
-| [architecture.md](docs/architecture.md)   | Capas, flujo HTTP, S2S, WebSocket                          |
+| [architecture.md](docs/architecture.md)   | Capas, flujo HTTP, tokens, WebSocket                       |
 | [configuration.md](docs/configuration.md) | Opciones, `baseUrl`, timeouts, reintentos, scripts         |
 | [conventions.md](docs/conventions.md)     | Naming, Result Pattern, validación, imports, tests         |
 | [decisions.md](docs/decisions.md)         | ADRs                                                       |

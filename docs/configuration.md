@@ -23,7 +23,7 @@ Requiere Node 22 o superior. El WebSocket usa el `WebSocket` global (Node 22+, B
 | `signal`     | —                  | Cancela todas las operaciones en vuelo del cliente                                                                                                                                                           |
 | `reintentos` | ver abajo          | `{ maximo, esperaBaseMs, esperaMaximaMs }`                                                                                                                                                                   |
 
-Credenciales: `crearCliente` → `apiKey`; `crearClienteAdmin` / `crearClienteInterno` → `clientId` + `secretoHex`. Una opción inválida lanza `ErrorConfiguracion` al construir el cliente.
+Credenciales: `crearCliente` → `apiKey`; `crearClienteAdmin` / `crearClienteInterno` → `obtenerToken` (requerido) e `invalidarToken(tokenRechazado)` (opcional, sin él no hay reintento ante `401`), un proveedor de tokens de servicio de Auth. Una opción inválida lanza `ErrorConfiguracion` al construir el cliente.
 
 ### `baseUrl`
 
@@ -49,12 +49,12 @@ Un path se rechaza en vez de ignorarse porque `new URL(path, base)` descarta en 
 
 El SDK no lee variables de entorno: eres tú quien pasa los valores. Nombres sugeridos:
 
-| Variable                                  | Uso                                                |
-| ----------------------------------------- | -------------------------------------------------- |
-| `EVA_WHATSAPP_BASE_URL`                   | `baseUrl`                                          |
-| `EVA_WHATSAPP_API_KEY`                    | `apiKey` (`.` y `./ws`)                            |
-| `EVA_S2S_CLIENT_ID`, `EVA_S2S_SECRET_HEX` | `clientId`, `secretoHex` (`./admin`, `./internal`) |
-| `WEBHOOK_SECRET`                          | secreto de `./webhooks`                            |
+| Variable                                   | Uso                                                 |
+| ------------------------------------------ | --------------------------------------------------- |
+| `EVA_WHATSAPP_BASE_URL`                    | `baseUrl`                                           |
+| `EVA_WHATSAPP_API_KEY`                     | `apiKey` (`.` y `./ws`)                             |
+| `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET_HEX` | credenciales de tu proveedor de tokens (no del SDK) |
+| `WEBHOOK_SECRET`                           | secreto de `./webhooks`                             |
 
 Un entorno, una `baseUrl`: el artefacto es el mismo para todos; cambia el valor, no el paquete.
 
@@ -74,12 +74,13 @@ Política por defecto: `maximo: 2`, `esperaBaseMs: 250`, `esperaMaximaMs: 10_000
 | `GET` ante red/timeout, 5xx o 429                                 | sí                                                     |
 | `GET` con efecto (QR, `webhookSecret.enviar`)                     | no (`reintentar: false` fijo)                          |
 | `POST`, `PUT`, `PATCH`                                            | no: podrían duplicar un mensaje o un cobro             |
+| `401` en `./admin` / `./internal` (cualquier método)              | sí, **una vez**, con token nuevo                       |
 | `DELETE`                                                          | no (`reintentar: false` fijo en todas las operaciones) |
 | 4xx distintos de 429, errores de parseo, redirects, cancelaciones | no                                                     |
 
-Si la API responde `Retry-After` mayor a `esperaMaximaMs`, no se reintenta y el `429` llega con `retryAfter` (segundos) para que decidas. Los reintentos firman de nuevo (nonce nuevo en S2S).
+Si la API responde `Retry-After` mayor a `esperaMaximaMs`, no se reintenta y el `429` llega con `retryAfter` (segundos) para que decidas. Cada reintento vuelve a pedir el token a `obtenerToken`. Además, `./admin` e `./internal` reintentan **una vez** un `401` (solo si hay `invalidarToken`, que se invoca antes), aun en `POST`; ese reintento no consume `maximo`.
 
-Override por petición: `reintentar: true | false` en `HttpClient.request/get/post…`. Las operaciones de los facades solo aceptan `signal` y `timeout`; el `HttpClient` lo obtienes con `crearHttpClientS2S` (exportado por `./admin` e `./internal`).
+Override por petición: `reintentar: true | false` en `HttpClient.request/get/post…`. Las operaciones de los facades solo aceptan `signal` y `timeout`; el `HttpClient` lo obtienes con `crearHttpClientConToken` (exportado por `./admin` e `./internal`).
 
 ## 2. Como contribuidor
 
@@ -102,6 +103,6 @@ pnpm install --frozen-lockfile
 
 `prepublishOnly` ejecuta lint, typecheck, tests y build. Los tests usan `fetch` y `WebSocket` simulados (`*.mock.test.ts`): no hay red real.
 
-`@eva_solutions/auth-sdk` es una devDependency desde `vendor/*.tgz`, usada solo por el test de contrato de la firma S2S (`tests/s2s/`). No es dependencia de runtime. `pnpm-workspace.yaml` aprueba el script de instalación de `esbuild` (`allowBuilds`), necesario con pnpm 11.
+El SDK no depende del auth-sdk, ni en runtime ni en desarrollo: el consumidor pasa su proveedor de tokens. `pnpm-workspace.yaml` aprueba el script de instalación de `esbuild` (`allowBuilds`), necesario con pnpm 11.
 
 Release y CI: ver [CONTRIBUTING.md](../CONTRIBUTING.md#publicación-mantenedores).

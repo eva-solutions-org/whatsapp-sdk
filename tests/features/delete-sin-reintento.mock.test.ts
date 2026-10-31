@@ -23,13 +23,13 @@ const OPERACIONES_DELETE: [string, (http: HttpClient) => Promise<unknown>][] = [
   ],
   [
     "admin.serviceClients.eliminar",
-    (h) => crearFacadeServiceClients(h).eliminar({ slug: "mi-client" }),
+    (h) => crearFacadeServiceClients(h).eliminar({ id: "0b9a2f64-5c1e-4f3a-9d6e-3a1f7c2b8e10" }),
   ],
   [
     "admin.serviceClients.telefonosOrigen.quitar",
     (h) =>
       crearFacadeServiceClients(h).telefonosOrigen.quitar({
-        slug: "mi-client",
+        id: "0b9a2f64-5c1e-4f3a-9d6e-3a1f7c2b8e10",
         phone: "573001234567",
       }),
   ],

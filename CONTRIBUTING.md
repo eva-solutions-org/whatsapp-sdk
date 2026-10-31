@@ -28,10 +28,10 @@ Si esos cuatro pasan, la base está sana. Tras `build`, `pnpm run publint` y `pn
 
 ## Reglas del repo
 
-- **Sin secretos:** nunca commitees API keys, secretos S2S, tokens, URLs internas ni datos reales de WhatsApp. Los tests usan fixtures y `fetch` simulado.
+- **Sin secretos:** nunca commitees API keys, tokens de servicio, secretos de webhook, URLs internas ni datos reales de WhatsApp. Los tests usan fixtures y `fetch` simulado.
 - **Una operación nueva** sigue la forma `(http) => (input, opciones?) => Promise<Resultado<T>>`, valida su entrada con `validarEntrada` y decide explícitamente si se reintenta (los `POST`, `DELETE` y `GET` con efecto, no).
 - **Si cambia el contrato de la API**, actualiza los schemas del SDK, su test y [docs/api.md](./docs/api.md).
-- **Firma S2S:** `tests/s2s/` compara contra `@eva_solutions/auth-sdk` (devDependency desde `vendor/`). No modifiques la firma sin que ese test lo respalde.
+- **Sin dependencia del auth-sdk:** `./admin` e `./internal` reciben un proveedor de tokens (`obtenerToken`, `invalidarToken?(tokenRechazado)`); el SDK no emite ni renueva tokens. Ante un `401` se reintenta una sola vez: no lo amplíes sin un ADR.
 
 ## Publicación (mantenedores)
 

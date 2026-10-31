@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { respuestaError, respuestaErrorS2S, respuestaJsonData } from "../../helpers/mock-fetch.js";
-import { crearAdminPrueba, esperarHeadersS2S, peticion } from "../../helpers/ayudas-s2s.js";
+import {
+  respuestaError,
+  respuestaErrorToken,
+  respuestaJsonData,
+} from "../../helpers/mock-fetch.js";
+import { crearAdminPrueba, esperarBearer, peticion } from "../../helpers/ayudas-token.js";
 import { crearFacadeQrSistema } from "../../../src/features/admin-qr-sistema/index.js";
 import { crearHttpDePrueba } from "../../helpers/http-prueba.js";
 
@@ -21,7 +25,7 @@ describe("admin.qrSistema", () => {
     expect(enviada.ruta).toBe("/v1/admin/system-qr");
     expect(enviada.query).toEqual({ format: "raw" });
     expect(enviada.cuerpo).toBeUndefined();
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("obtener sin formato no manda format (default de la API)", async () => {
@@ -72,7 +76,7 @@ describe("admin.qrSistema", () => {
     const enviada = peticion(fetchMock);
     expect(enviada.ruta).toBe("/v1/admin/system-qr");
     expect(enviada.query).toEqual({ format: "png" });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("obtenerPng con sesión conectada llega como application/json (rareza de la API)", async () => {
@@ -88,7 +92,7 @@ describe("admin.qrSistema", () => {
 
   it("mapea el 401 S2S { error: { code, message } } con su codigoApi", async () => {
     const { admin } = crearAdminPrueba(() =>
-      respuestaErrorS2S(401, "invalid_signature", "Acceso no autorizado"),
+      respuestaErrorToken(401, "invalid_signature", "Acceso no autorizado"),
     );
 
     const r = await admin.qrSistema.obtener();
@@ -132,7 +136,7 @@ describe("admin.sesiones", () => {
     expect(enviada.metodo).toBe("DELETE");
     expect(enviada.ruta).toBe("/v1/admin/sessions/573001234567");
     expect(enviada.cuerpo).toBeUndefined();
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("mapea el 403 al intentar eliminar la sesión del sistema", async () => {

@@ -2,8 +2,7 @@ import type { HttpClient } from "../../../core/http-client/index.js";
 import { enviarMensaje } from "./enviar-mensaje.js";
 
 /**
- * Envío de mensajes entre servicios. Solo HMAC S2S: el camino con JWT de servicio
- * (`Authorization: Bearer`) es exclusivo de Auth - API y este SDK no lo implementa.
+ * Envío de mensajes entre servicios, con un token Bearer de servicio emitido por Auth.
  */
 export const crearFacadeMensajesInternos = (http: HttpClient) => ({
   /**

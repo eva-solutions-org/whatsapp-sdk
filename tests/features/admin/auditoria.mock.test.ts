@@ -1,7 +1,7 @@
 import { recolectar } from "../../helpers/iteradores.js";
 import { describe, expect, it } from "vitest";
 import { respuestaError, respuestaJson, respuestaJsonData } from "../../helpers/mock-fetch.js";
-import { crearAdminPrueba, esperarHeadersS2S, peticion } from "../../helpers/ayudas-s2s.js";
+import { crearAdminPrueba, esperarBearer, peticion } from "../../helpers/ayudas-token.js";
 
 const LOG = {
   id: 1201,
@@ -39,7 +39,7 @@ describe("admin.auditoria", () => {
       page: "2",
       limit: "10",
     });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("listarLogs sin filtros no manda query", async () => {
@@ -79,7 +79,7 @@ describe("admin.auditoria", () => {
     const enviada = peticion(fetchMock);
     expect(enviada.ruta).toBe("/v1/admin/audit/analytics/usage");
     expect(enviada.query).toEqual({ apiKeyId: "clxyz1234567890abcdef", period: "7d" });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("obtenerUso mapea el 400 de periodo inválido de la API", async () => {

@@ -5,9 +5,8 @@ node_modules/
 dist/
 coverage/
 
-# Pack output (el tarball de vendor/ SÍ se versiona: devDependency de contrato)
+# Pack output
 *.tgz
-!vendor/*.tgz
 
 # Env (nunca commitear)
 .env

@@ -26,8 +26,8 @@ import type { OpcionesReintentos } from "./reintentos.js";
  * Opciones del factory `crearHttpClient`.
  *
  * - `baseUrl`: origin ya validado (`validarBaseUrl`); las rutas se resuelven contra él.
- * - `autenticador`: agrega los headers de auth en cada intento (x-api-key o firma S2S). Si declara
- *   `soportaMultipart: false`, un body `FormData` se rechaza con 400 local sin llamar a fetch.
+ * - `autenticador`: agrega los headers de auth en cada intento (x-api-key o Bearer). Si declara
+ *   `ante401`, un `401` lo invoca y reintenta una vez (ver `Autenticador`).
  * - `timeout`: ms por intento, vía `AbortSignal.timeout()`.
  * - `headersExtra`: headers del consumidor. Los del autenticador y los internos GANAN
  *   ante colisión (las claves se normalizan a minúsculas).
@@ -118,7 +118,7 @@ const construirUrl = (
 
 interface CuerpoPreparado {
   contenido: string | FormData | undefined;
-  /** Bytes EXACTOS del body, para firmar (vacío con `FormData`). */
+  /** Bytes EXACTOS del body (vacío con `FormData`). */
   bytes: Uint8Array;
   esJson: boolean;
   esMultipart: boolean;
@@ -153,6 +153,10 @@ const esErrorRedirect = (err: unknown): boolean =>
 interface ResultadoIntento<T> {
   resultado: Resultado<T>;
   reintentable: boolean;
+  /** `true` si la API respondió 401 (el autenticador puede renovar su credencial). */
+  noAutorizado?: boolean;
+  /** Headers que viajaron en el intento que recibió el 401 (el autenticador ve qué token se rechazó). */
+  headersEnviados?: Headers;
   /** Espera pedida por la API con `Retry-After`, en ms. */
   esperaSugeridaMs?: number;
 }
@@ -184,7 +188,10 @@ const leerJson = async (response: Response): Promise<{ texto: string; json: unkn
  * - Timeout por intento + `clientSignal` + `signal` de la operación, combinados.
  * - Reintentos por defecto solo en GET/DELETE (override por operación: `reintentar`) ante
  *   red/timeout, 5xx y 429, con backoff exponencial y
- *   respetando `Retry-After`. El autenticador corre en cada intento (nonce S2S nuevo).
+ *   respetando `Retry-After`. El autenticador corre en cada intento.
+ * - Si el autenticador declara `ante401`, un 401 lo invoca (con los headers rechazados) y reintenta
+ *   UNA vez (también en POST: el servidor no procesó la request), sin consumir el presupuesto de
+ *   reintentos. Si `ante401` lanza, se devuelve el 401 sin reintentar.
  * - Las credenciales nunca aparecen en mensajes de error.
  */
 export const crearHttpClient = (opciones: OpcionesHttpClient) => {
@@ -252,6 +259,7 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       return {
         resultado: mapearErrorHttp(response, cuerpoLeido?.json),
         reintentable: esStatusReintentable(response.status),
+        ...(response.status === 401 && { noAutorizado: true }),
         ...(esperaSegundos !== undefined && { esperaSugeridaMs: esperaSegundos * 1000 }),
       };
     }
@@ -302,8 +310,8 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
     let headers: Headers;
     try {
       headers = await construirHeaders(method, url, cuerpo);
-    } catch {
-      return { resultado: mapearErrorAutenticacion(), reintentable: false };
+    } catch (err) {
+      return { resultado: mapearErrorAutenticacion(err), reintentable: false };
     }
 
     let response: Response;
@@ -334,7 +342,8 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       return { resultado: mapearErrorRedTecnico(), reintentable: true };
     }
 
-    return procesarRespuesta(response, schemaRespuesta, modo);
+    const intento = await procesarRespuesta(response, schemaRespuesta, modo);
+    return intento.noAutorizado === true ? { ...intento, headersEnviados: headers } : intento;
   };
 
   const request = async <T>(opts: OpcionesRequest<T>): Promise<Resultado<T>> => {
@@ -354,14 +363,12 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
     if (cuerpo === null) {
       return mapearErrorPeticion("El cuerpo no es serializable a JSON");
     }
-    if (cuerpo.esMultipart && autenticador.soportaMultipart === false) {
-      return mapearErrorPeticion("El autenticador no soporta cuerpos multipart (FormData)");
-    }
 
     const maximo = (reintentar ?? esMetodoIdempotente(method)) ? politica.maximo : 0;
     const signalsExternas = [clientSignal, opSignal].filter((s) => s !== undefined);
     const signalEspera = signalsExternas.length > 0 ? AbortSignal.any(signalsExternas) : undefined;
 
+    let reintentoPor401 = false;
     for (let intento = 0; ; intento++) {
       const resultadoIntento = await ejecutarIntento({
         method,
@@ -372,6 +379,21 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
         modo,
         timeoutMs,
       });
+      if (
+        resultadoIntento.noAutorizado === true &&
+        autenticador.ante401 !== undefined &&
+        !reintentoPor401
+      ) {
+        reintentoPor401 = true;
+        try {
+          autenticador.ante401(resultadoIntento.headersEnviados ?? new Headers());
+        } catch {
+          // No se pudo invalidar: reintentar saldría con el mismo token. Se devuelve el 401.
+          return resultadoIntento.resultado;
+        }
+        intento--; // no consume el presupuesto de reintentos por red/5xx/429
+        continue;
+      }
       if (
         resultadoIntento.resultado.success ||
         !resultadoIntento.reintentable ||

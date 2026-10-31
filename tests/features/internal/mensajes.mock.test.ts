@@ -1,15 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { crearClienteInterno } from "../../../src/internal.js";
-import { CLIENT_ID_S2S_TEST, SECRETO_S2S_HEX_TEST } from "../../helpers/fixtures.js";
+import { TOKEN_SERVICIO_TEST } from "../../helpers/fixtures.js";
 import {
   BASE_URL_PRUEBA,
   crearMockFetch,
   respuestaError,
-  respuestaErrorS2S,
+  respuestaErrorToken,
   respuestaJsonData,
   respuestaValidacion422,
 } from "../../helpers/mock-fetch.js";
-import { crearInternoPrueba, esperarHeadersS2S, peticion } from "../../helpers/ayudas-s2s.js";
+import { crearInternoPrueba, esperarBearer, peticion } from "../../helpers/ayudas-token.js";
 
 const TEXTO = { phone: "51999999999", message: "OTP: 123456", sourcePhone: "51988888888" };
 
@@ -27,7 +27,7 @@ describe("interno.mensajes.enviar", () => {
     expect(enviada.ruta).toBe("/v1/internal/messages/send");
     expect(enviada.query).toEqual({});
     expect(enviada.cuerpo).toEqual(TEXTO);
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("media: manda mediaUrl, mediaType y caption", async () => {
@@ -48,7 +48,7 @@ describe("interno.mensajes.enviar", () => {
     expect(peticion(fetchMock).cuerpo).toEqual(media);
   });
 
-  it("no envía el signal ni el secreto en el body ni en los headers", async () => {
+  it("no envía el signal en el body y el token solo viaja en Authorization", async () => {
     const { interno, fetchMock } = crearInternoPrueba(() =>
       respuestaJsonData({ message: "Mensaje enviado" }),
     );
@@ -57,7 +57,8 @@ describe("interno.mensajes.enviar", () => {
 
     const enviada = peticion(fetchMock);
     expect(enviada.cuerpo).toEqual(TEXTO);
-    expect(JSON.stringify([...enviada.headers.entries()])).not.toContain(SECRETO_S2S_HEX_TEST);
+    expect(JSON.stringify(enviada.cuerpo)).not.toContain(TOKEN_SERVICIO_TEST);
+    expect(enviada.headers.get("authorization")).toBe(`Bearer ${TOKEN_SERVICIO_TEST}`);
   });
 
   it("403 de allowlist/scope se mapea con el mensaje de la API", async () => {
@@ -113,9 +114,9 @@ describe("interno.mensajes.enviar", () => {
     });
   });
 
-  it("401 S2S { error: { code, message } } con codigoApi, sin filtrar el secreto", async () => {
+  it("401 por token inválido: mapea { error: { code, message } } con codigoApi, sin filtrar el token", async () => {
     const { interno } = crearInternoPrueba(() =>
-      respuestaErrorS2S(401, "invalid_signature", "Acceso no autorizado"),
+      respuestaErrorToken(401, "invalid_token", "Token inválido o vencido"),
     );
 
     const r = await interno.mensajes.enviar(TEXTO);
@@ -123,20 +124,74 @@ describe("interno.mensajes.enviar", () => {
     expect(r).toMatchObject({
       success: false,
       codigo: 401,
-      error: "Acceso no autorizado",
-      codigoApi: "invalid_signature",
+      error: "Token inválido o vencido",
+      codigoApi: "invalid_token",
     });
-    expect(JSON.stringify(r)).not.toContain(SECRETO_S2S_HEX_TEST);
+    expect(JSON.stringify(r)).not.toContain(TOKEN_SERVICIO_TEST);
+  });
+
+  it("403 por permiso insuficiente en el token se mapea como fallo de la API", async () => {
+    const { interno } = crearInternoPrueba(() => respuestaError(403, "Permiso insuficiente"));
+
+    const r = await interno.mensajes.enviar(TEXTO);
+
+    expect(r).toMatchObject({ success: false, codigo: 403, origen: "api" });
+  });
+
+  it("ante un 401 invalida el token y reintenta el POST una vez con el token nuevo", async () => {
+    const tokens = ["token-viejo", "token-nuevo"];
+    const obtenerToken = vi.fn(() => Promise.resolve(tokens.shift() as string));
+    const invalidarToken = vi.fn();
+    let llamada = 0;
+    const fetchMock = crearMockFetch(() =>
+      (llamada += 1) === 1
+        ? respuestaErrorToken(401, "invalid_token", "Token vencido")
+        : respuestaJsonData({ message: "Mensaje enviado" }),
+    );
+    const interno = crearClienteInterno({
+      baseUrl: BASE_URL_PRUEBA,
+      obtenerToken,
+      invalidarToken,
+      fetch: fetchMock,
+      reintentos: { maximo: 0 },
+    });
+
+    const r = await interno.mensajes.enviar(TEXTO);
+
+    expect(r).toEqual({ success: true, data: { message: "Mensaje enviado" } });
+    expect(invalidarToken).toHaveBeenCalledExactlyOnceWith("token-viejo");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(peticion(fetchMock, 0).headers.get("authorization")).toBe("Bearer token-viejo");
+    expect(peticion(fetchMock, 1).headers.get("authorization")).toBe("Bearer token-nuevo");
+  });
+
+  it("un segundo 401 no se reintenta: devuelve el fallo tras una sola invalidación", async () => {
+    const invalidarToken = vi.fn();
+    const fetchMock = crearMockFetch(() =>
+      respuestaErrorToken(401, "invalid_token", "Token inválido"),
+    );
+    const interno = crearClienteInterno({
+      baseUrl: BASE_URL_PRUEBA,
+      obtenerToken: () => Promise.resolve(TOKEN_SERVICIO_TEST),
+      invalidarToken,
+      fetch: fetchMock,
+      reintentos: { maximo: 3, esperaBaseMs: 0, esperaMaximaMs: 0 },
+    });
+
+    const r = await interno.mensajes.enviar(TEXTO);
+
+    expect(r).toMatchObject({ success: false, codigo: 401, codigoApi: "invalid_token" });
+    expect(invalidarToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("un POST que falla con 503 no se reintenta aunque el cliente permita reintentos", async () => {
     // El cliente de prueba usa reintentos: { maximo: 0 }; aquí se habilitan para probar que el
-    // core igual NO reintenta un POST (nonce de un solo uso).
+    // core igual NO reintenta un POST (el mensaje pudo haber salido).
     const fetchMock = crearMockFetch(() => respuestaError(503, "Sesión no disponible"));
     const interno = crearClienteInterno({
       baseUrl: BASE_URL_PRUEBA,
-      clientId: CLIENT_ID_S2S_TEST,
-      secretoHex: SECRETO_S2S_HEX_TEST,
+      obtenerToken: () => Promise.resolve(TOKEN_SERVICIO_TEST),
       fetch: fetchMock,
       reintentos: { maximo: 3, esperaBaseMs: 0, esperaMaximaMs: 0 },
     });

@@ -6,11 +6,9 @@ export type {
   ActualizarServiceClientInput,
   Allowlist,
   CrearServiceClientInput,
+  IdServiceClientInput,
   ListaServiceClients,
   ListarServiceClientsInput,
-  SecretRotado,
   ServiceClient,
-  ServiceClientCreado,
-  SlugInput,
   TelefonoOrigenInput,
 } from "./domain/index.js";

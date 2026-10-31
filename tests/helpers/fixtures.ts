@@ -6,10 +6,7 @@ import { createHmac } from "node:crypto";
 
 export const API_KEY_TEST = "wa_test_fixture_abc123";
 export const SECRETO_WEBHOOK_TEST = "s3cr3t-webhook-fixture-only";
-export const CLIENT_ID_S2S_TEST = "servicio-prueba";
-/** 32 bytes en hex (formato del secreto S2S de un service client). */
-export const SECRETO_S2S_HEX_TEST =
-  "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+export const TOKEN_SERVICIO_TEST = "token-de-servicio-fixture";
 
 /**
  * Genera la firma `X-Webhook-Signature` válida (`sha256=<hex>`) para un cuerpo.

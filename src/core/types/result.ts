@@ -15,10 +15,10 @@
  * - `origen`: quién produjo el error. `"api"`: la API respondió (incluye un 503 real y un 2xx con
  *   forma inesperada). `"transporte"`: no hubo respuesta (red, DNS, TLS, timeout, abort, redirect);
  *   en un POST de envío el resultado es ambiguo (el mensaje pudo salir). `"local"`: el SDK lo
- *   rechazó antes de enviar (validación 422, ruta o cuerpo inválidos, fallo de firma).
+ *   rechazó antes de enviar (validación 422, ruta o cuerpo inválidos, fallo al obtener el token).
  * - `requestId`: header `x-request-id` de la respuesta, para soporte y trazabilidad.
  * - `detalles`: cuerpo `detalles` de un 422 (validación Zod aplanada: `fieldErrors`/`formErrors`).
- * - `codigoApi`: `error.code` de las respuestas `{ error: { code, message } }` (auth S2S).
+ * - `codigoApi`: `error.code` de las respuestas `{ error: { code, message } }` (token de servicio).
  * - `retryAfter` (solo 429): segundos sugeridos por `Retry-After`.
  */
 

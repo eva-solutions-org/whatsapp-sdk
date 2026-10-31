@@ -15,7 +15,7 @@ export interface OpcionesOperacion {
 }
 
 /**
- * Valida la entrada del consumidor ANTES de enviar (y de firmar, en S2S). Un fallo es un 422 con
+ * Valida la entrada del consumidor ANTES de enviar. Un fallo es un 422 con
  * `detalles` en el mismo formato (`formErrors`/`fieldErrors`) que la API usa para su 422 (Result
  * Pattern, no lanza) y no sale ninguna request. El mensaje nunca incluye los valores recibidos,
  * solo qué campo falló y por qué.

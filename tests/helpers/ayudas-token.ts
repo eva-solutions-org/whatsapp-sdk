@@ -1,19 +1,18 @@
 import { expect } from "vitest";
 import { crearClienteAdmin } from "../../src/admin.js";
 import { crearClienteInterno } from "../../src/internal.js";
-import { CLIENT_ID_S2S_TEST, SECRETO_S2S_HEX_TEST } from "./fixtures.js";
+import { TOKEN_SERVICIO_TEST } from "./fixtures.js";
 import { BASE_URL_PRUEBA, crearMockFetch } from "./mock-fetch.js";
 import type { MockFetchHandler } from "./mock-fetch.js";
 
 /**
- * Ayudas de los tests de `./admin` e `./internal`: arman el cliente PÚBLICO (con firma S2S
+ * Ayudas de los tests de `./admin` e `./internal`: arman el cliente PÚBLICO (con Bearer
  * real) contra un `fetch` mockeado, sin reintentos, y leen lo que realmente se envió.
  */
 
 const opcionesPrueba = (fetchMock: ReturnType<typeof crearMockFetch>) => ({
   baseUrl: BASE_URL_PRUEBA,
-  clientId: CLIENT_ID_S2S_TEST,
-  secretoHex: SECRETO_S2S_HEX_TEST,
+  obtenerToken: () => Promise.resolve(TOKEN_SERVICIO_TEST),
   fetch: fetchMock,
   timeout: 5_000,
   reintentos: { maximo: 0 },
@@ -54,10 +53,7 @@ export const peticion = (
   };
 };
 
-/** Los cuatro headers `X-Eva-*` de la firma S2S, con el formato que exige la API. */
-export const esperarHeadersS2S = (headers: Headers): void => {
-  expect(headers.get("x-eva-client-id")).toBe(CLIENT_ID_S2S_TEST);
-  expect(headers.get("x-eva-timestamp")).toMatch(/^\d{10}$/);
-  expect(headers.get("x-eva-nonce")).toMatch(/^[0-9a-f]{32}$/);
-  expect(headers.get("x-eva-signature")).toMatch(/^sha256=[0-9a-f]{64}$/);
+/** El header `Authorization: Bearer <token>` con el token de servicio de las pruebas. */
+export const esperarBearer = (headers: Headers): void => {
+  expect(headers.get("authorization")).toBe(`Bearer ${TOKEN_SERVICIO_TEST}`);
 };

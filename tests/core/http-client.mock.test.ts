@@ -3,13 +3,12 @@ import { z } from "zod";
 import { segmentoRuta } from "../../src/core/http-client/index.js";
 import type { Autenticador } from "../../src/core/http-client/index.js";
 import { validarEntrada } from "../../src/core/validacion/index.js";
-import { autenticadorS2S } from "../../src/core/s2s/index.js";
-import { API_KEY_TEST, CLIENT_ID_S2S_TEST, SECRETO_S2S_HEX_TEST } from "../helpers/fixtures.js";
+import { API_KEY_TEST } from "../helpers/fixtures.js";
 import { crearHttpDePrueba, headersDeLlamada } from "../helpers/http-prueba.js";
 import {
   BASE_URL_PRUEBA,
   respuestaError,
-  respuestaErrorS2S,
+  respuestaErrorToken,
   respuestaJson,
   respuestaJsonData,
   respuestaSinContenido,
@@ -125,50 +124,6 @@ describe("http-client: request saliente", () => {
     expect(headers.get("x-trace")).toBe("t1");
   });
 
-  it("rechaza con 400 local un FormData si el autenticador no soporta multipart (sin llamar a fetch)", async () => {
-    const autenticador: Autenticador = Object.assign(() => ({}), { soportaMultipart: false });
-    const { http, fetchMock } = crearHttpDePrueba(() => respuestaJsonData({}), { autenticador });
-    const form = new FormData();
-    form.append("to", "593");
-
-    const r = await http.post("/v1/send/image", form);
-
-    expect(r).toEqual({
-      success: false,
-      codigo: 400,
-      origen: "local",
-      error: "El autenticador no soporta cuerpos multipart (FormData)",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("rechaza con 400 local un FormData con el autenticador S2S real", async () => {
-    const { http, fetchMock } = crearHttpDePrueba(() => respuestaJsonData({}), {
-      autenticador: autenticadorS2S({
-        clientId: CLIENT_ID_S2S_TEST,
-        secretoHex: SECRETO_S2S_HEX_TEST,
-      }),
-    });
-
-    const r = await http.post("/v1/send/image", new FormData());
-
-    expect(r).toMatchObject({ success: false, codigo: 400, origen: "local" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("un autenticador S2S sigue firmando bodies JSON", async () => {
-    const { http, fetchMock } = crearHttpDePrueba(() => respuestaJsonData({}), {
-      autenticador: autenticadorS2S({
-        clientId: CLIENT_ID_S2S_TEST,
-        secretoHex: SECRETO_S2S_HEX_TEST,
-      }),
-    });
-
-    await http.post("/v1/algo", { a: 1 });
-
-    expect(headersDeLlamada(fetchMock).get("x-eva-client-id")).toBe(CLIENT_ID_S2S_TEST);
-  });
-
   it("entrega al autenticador método, URL final y bytes exactos del body", async () => {
     const autenticador = vi.fn<Autenticador>(() => ({}));
     const { http } = crearHttpDePrueba(() => respuestaJsonData({}), { autenticador });
@@ -269,7 +224,7 @@ describe("http-client: mapeo de errores de la API", () => {
   });
 
   it("mapea el 401 S2S { error: { code, message } } con codigoApi", async () => {
-    const { http } = crearHttpDePrueba(() => respuestaErrorS2S());
+    const { http } = crearHttpDePrueba(() => respuestaErrorToken());
 
     const r = await http.get("/v1/admin/x");
 
@@ -584,7 +539,7 @@ describe("http-client: reintentos", () => {
     expect(dormir.mock.calls.map((c) => c[0])).toEqual([100, 200, 350]);
   });
 
-  it("vuelve a invocar el autenticador en cada intento (nonce S2S nuevo)", async () => {
+  it("vuelve a invocar el autenticador en cada intento (el token puede cambiar entre intentos)", async () => {
     let n = 0;
     const autenticador = vi.fn<Autenticador>(() => ({ "x-nonce": String((n += 1)) }));
     const { http, fetchMock } = crearHttpDePrueba(() => respuestaError(500, "falla"), {
@@ -597,5 +552,116 @@ describe("http-client: reintentos", () => {
     expect(autenticador).toHaveBeenCalledTimes(2);
     expect(headersDeLlamada(fetchMock, 0).get("x-nonce")).toBe("1");
     expect(headersDeLlamada(fetchMock, 1).get("x-nonce")).toBe("2");
+  });
+});
+
+describe("http-client: reintento único ante 401 (autenticador con ante401)", () => {
+  const autenticadorConHook = (ante401: (h: Headers) => void): Autenticador =>
+    Object.assign(() => ({ authorization: "Bearer t" }), { ante401 });
+
+  const secuencia = (...respuestas: Array<() => Response>) => {
+    let i = 0;
+    return () => (respuestas[Math.min(i++, respuestas.length - 1)] as () => Response)();
+  };
+
+  it("reintenta una vez un POST tras un 401 y devuelve el éxito", async () => {
+    const ante401 = vi.fn();
+    const { http, fetchMock } = crearHttpDePrueba(
+      secuencia(
+        () => respuestaErrorToken(),
+        () => respuestaJsonData({ ok: true }),
+      ),
+      { autenticador: autenticadorConHook(ante401) },
+    );
+
+    const r = await http.post("/v1/algo", { a: 1 });
+
+    expect(r).toEqual({ success: true, data: { ok: true } });
+    expect(ante401).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("entrega a ante401 los headers que fueron rechazados", async () => {
+    const ante401 = vi.fn();
+    const { http } = crearHttpDePrueba(
+      secuencia(
+        () => respuestaErrorToken(),
+        () => respuestaJsonData({ ok: true }),
+      ),
+      { autenticador: autenticadorConHook(ante401) },
+    );
+
+    await http.get("/v1/algo");
+
+    const headers = ante401.mock.calls[0]?.[0] as Headers;
+    expect(headers.get("authorization")).toBe("Bearer t");
+  });
+
+  it("si ante401 lanza devuelve el 401 sin reintentar ni lanzar", async () => {
+    const { http, fetchMock } = crearHttpDePrueba(() => respuestaErrorToken(), {
+      autenticador: autenticadorConHook(() => {
+        throw new Error("boom");
+      }),
+    });
+
+    const r = await http.post("/v1/algo", {});
+
+    expect(r).toMatchObject({ success: false, codigo: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("no reintenta un segundo 401: devuelve el fallo tras una sola invalidación", async () => {
+    const ante401 = vi.fn();
+    const { http, fetchMock } = crearHttpDePrueba(() => respuestaErrorToken(), {
+      autenticador: autenticadorConHook(ante401),
+      reintentos: { maximo: 3, esperaBaseMs: 0, esperaMaximaMs: 0 },
+    });
+
+    const r = await http.get("/v1/algo");
+
+    expect(r).toMatchObject({ success: false, codigo: 401 });
+    expect(ante401).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("no consume el presupuesto de reintentos por 5xx", async () => {
+    const { http, fetchMock } = crearHttpDePrueba(
+      secuencia(
+        () => respuestaErrorToken(),
+        () => respuestaError(503, "caído"),
+        () => respuestaJsonData({ ok: true }),
+      ),
+      {
+        autenticador: autenticadorConHook(vi.fn()),
+        reintentos: { maximo: 1, esperaBaseMs: 0, esperaMaximaMs: 0 },
+      },
+    );
+
+    const r = await http.get("/v1/algo");
+
+    expect(r).toEqual({ success: true, data: { ok: true } });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("no reintenta ante 403", async () => {
+    const ante401 = vi.fn();
+    const { http, fetchMock } = crearHttpDePrueba(() => respuestaError(403, "Sin permiso"), {
+      autenticador: autenticadorConHook(ante401),
+    });
+
+    const r = await http.post("/v1/algo", {});
+
+    expect(r).toMatchObject({ success: false, codigo: 403 });
+    expect(ante401).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin ante401 un 401 no se reintenta (x-api-key)", async () => {
+    const { http, fetchMock } = crearHttpDePrueba(() => respuestaErrorToken());
+
+    const r = await http.get("/v1/algo");
+
+    expect(r).toMatchObject({ success: false, codigo: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

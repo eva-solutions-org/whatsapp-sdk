@@ -4,8 +4,8 @@
  * Subpaths separados (cada uno con su entry):
  * - `/webhooks`: verificación de firma y eventos de webhook.
  * - `/ws`: cliente WebSocket de eventos en tiempo real.
- * - `/admin`: cliente de administración (firma S2S).
- * - `/internal`: envío interno de mensajes (firma S2S).
+ * - `/admin`: cliente de administración (token Bearer de servicio).
+ * - `/internal`: envío interno de mensajes (token Bearer de servicio).
  */
 
 // Cliente

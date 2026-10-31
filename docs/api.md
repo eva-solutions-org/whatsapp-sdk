@@ -143,34 +143,33 @@ type ErrorResultado = {
   origen: "api" | "transporte" | "local"; // quién produjo el error (ver abajo)
   requestId?: string; // header x-request-id, para soporte
   detalles?: unknown; // 422: { formErrors, fieldErrors }
-  codigoApi?: string; // error.code de las respuestas S2S
+  codigoApi?: string; // error.code de las respuestas { error: { code, message } }
   retryAfter?: number; // solo 429, en segundos
 };
 ```
 
 `origen` distingue la procedencia, que `codigo` por sí solo no revela (un `503` puede ser de la API o de la red; un `422` puede ser local o de la API):
 
-| `origen`       | Significa                         | Ejemplos                                                                                                                                                                         |
-| -------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"api"`        | La API respondió                  | Cualquier status HTTP de la API (incluido un `503` real), 2xx con JSON inválido o forma inesperada (`502`), status fuera de la lista (`502`)                                     |
-| `"transporte"` | No hubo respuesta                 | Red, DNS, TLS, timeout, cancelación por `signal`, redirect (siempre `503`). En un `POST` el resultado es ambiguo: el mensaje pudo salir                                          |
-| `"local"`      | El SDK lo rechazó antes de enviar | Validación `422`, ruta o cuerpo inválidos (`400`), `timeout` inválido (`400`), `FormData` con autenticador S2S (`400`), fallo del autenticador (`500`), verificación de webhooks |
+| `origen`       | Significa                         | Ejemplos                                                                                                                                                    |
+| -------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"api"`        | La API respondió                  | Cualquier status HTTP de la API (incluido un `503` real), 2xx con JSON inválido o forma inesperada (`502`), status fuera de la lista (`502`)                |
+| `"transporte"` | No hubo respuesta                 | Red, DNS, TLS, timeout, cancelación por `signal`, redirect (siempre `503`). En un `POST` el resultado es ambiguo: el mensaje pudo salir                     |
+| `"local"`      | El SDK lo rechazó antes de enviar | Validación `422`, ruta o cuerpo inválidos (`400`), `timeout` inválido (`400`), fallo del autenticador al obtener el token (`500`), verificación de webhooks |
 
 Cuadro de errores generados por el SDK (sin respuesta HTTP o antes de enviar):
 
-| Situación                                                                 | `codigo` | Mensaje                                                                                           |
-| ------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| Entrada inválida (validación local con Zod; no se envía ni se firma nada) | `422`    | `Entrada inválida: campo: motivo` (sin los valores recibidos); `detalles` en el formato de la API |
-| Ruta o cuerpo no seguro / no serializable (p. ej. `..` en un id)          | `400`    | `Ruta inválida`, `El cuerpo no es serializable a JSON`                                            |
-| `timeout` por operación inválido (no es número > 0)                       | `400`    | `timeout debe ser un número > 0 (ms)`                                                             |
-| Fallo de red, DNS o TLS                                                   | `503`    | `Error de red al comunicarse con el servicio`                                                     |
-| Timeout                                                                   | `503`    | `Tiempo de espera agotado`                                                                        |
-| Cancelación por `signal`                                                  | `503`    | `Operación cancelada`                                                                             |
-| Redirect                                                                  | `503`    | `Redirect inesperado rechazado por seguridad`                                                     |
-| Cuerpo `FormData` con un cliente S2S (`./admin`, `./internal`)            | `400`    | `El autenticador no soporta cuerpos multipart (FormData)`                                         |
-| 2xx con JSON inválido o con forma inesperada                              | `502`    | `Respuesta no es JSON válido` / `Shape inesperado: ...`                                           |
-| Status HTTP fuera de la lista (418, 504...)                               | `502`    | `Status HTTP inesperado: N`                                                                       |
-| El autenticador no pudo firmar (secreto S2S inutilizable)                 | `500`    | `No se pudo autenticar la petición`                                                               |
+| Situación                                                                | `codigo` | Mensaje                                                                                           |
+| ------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| Entrada inválida (validación local con Zod; no se envía nada)            | `422`    | `Entrada inválida: campo: motivo` (sin los valores recibidos); `detalles` en el formato de la API |
+| Ruta o cuerpo no seguro / no serializable (p. ej. `..` en un id)         | `400`    | `Ruta inválida`, `El cuerpo no es serializable a JSON`                                            |
+| `timeout` por operación inválido (no es número > 0)                      | `400`    | `timeout debe ser un número > 0 (ms)`                                                             |
+| Fallo de red, DNS o TLS                                                  | `503`    | `Error de red al comunicarse con el servicio`                                                     |
+| Timeout                                                                  | `503`    | `Tiempo de espera agotado`                                                                        |
+| Cancelación por `signal`                                                 | `503`    | `Operación cancelada`                                                                             |
+| Redirect                                                                 | `503`    | `Redirect inesperado rechazado por seguridad`                                                     |
+| 2xx con JSON inválido o con forma inesperada                             | `502`    | `Respuesta no es JSON válido` / `Shape inesperado: ...`                                           |
+| Status HTTP fuera de la lista (418, 504...)                              | `502`    | `Status HTTP inesperado: N`                                                                       |
+| `obtenerToken` falló o devolvió un token vacío (`./admin`, `./internal`) | `500`    | `No se pudo autenticar la petición`                                                               |
 
 Helpers: `esExitoso(r)`, `esFallido(r)`. Excepciones al patrón: `ErrorConfiguracion` (único `throw` síncrono), iteradores y cliente WebSocket.
 
@@ -180,12 +179,12 @@ Helpers: `esExitoso(r)`, `esFallido(r)`. Excepciones al patrón: `ErrorConfigura
 
 ### `crearClienteAdmin(opciones): ClienteAdmin`
 
-`opciones` = opciones comunes (`baseUrl`, `timeout`, `headers`, `fetch`, `signal`, `reintentos`) más `clientId` (slug del service client) y `secretoHex` (secreto en hex). El service client necesita el scope `admin`. Lanza `ErrorConfiguracion` si algo es inválido; los mensajes nunca incluyen el secreto.
+`opciones` = opciones comunes (`baseUrl`, `timeout`, `headers`, `fetch`, `signal`, `reintentos`) más `obtenerToken: () => Promise<string>` (requerido) e `invalidarToken?: (tokenRechazado: string) => void` (puede ser directamente `proveedor.invalidate` del auth-sdk). Envían `Authorization: Bearer <token>`; el token es un token de servicio de Auth con `aud: whatsapp-api` y el permiso `admin`. Ante un `401` se invoca `invalidarToken(tokenRechazado)` y la request se reintenta una vez; sin `invalidarToken` no se reintenta (ver [§7](#7-internal-internal)). Lanza `ErrorConfiguracion` si `obtenerToken`, `invalidarToken` o las opciones comunes son inválidos; los mensajes nunca incluyen el token.
 
 | Namespace                        | Métodos                                                                                                                                 | Endpoints                                                     |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `serviceClients`                 | `crear` (el `secret` viene una única vez), `listar`, `iterar`, `obtener`, `actualizar`, `eliminar`, `rotarSecret`                       | `/v1/admin/service-clients[/:slug][/rotate-secret]`           |
-| `serviceClients.telefonosOrigen` | `listar`, `agregar`, `quitar` (allowlist de `sourcePhone` para `./internal`)                                                            | `/v1/admin/service-clients/:slug/...`                         |
+| `serviceClients`                 | `crear`, `listar`, `iterar`, `obtener`, `actualizar`, `eliminar` (registro local, sin secreto ni permisos; ver abajo)                   | `/v1/admin/service-clients[/:id]`                             |
+| `serviceClients.telefonosOrigen` | `listar`, `agregar`, `quitar` (allowlist de `sourcePhone` para `./internal`)                                                            | `/v1/admin/service-clients/:id/source-phones[/:phone]`        |
 | `sesiones`                       | `eliminar({ phone })`                                                                                                                   | `DELETE /v1/admin/sessions/:phone`                            |
 | `qrSistema`                      | `obtener`, `obtenerPng`                                                                                                                 | `/v1/admin/system-qr`                                         |
 | `billing`                        | `precios.{listar,crear,actualizar,desactivar}`, `ajustarSaldo`, `cambiarMoneda`, `configurar`, `listarMovimientos`, `iterarMovimientos` | `/v1/admin/billing/*`                                         |
@@ -193,33 +192,46 @@ Helpers: `esExitoso(r)`, `esFallido(r)`. Excepciones al patrón: `ErrorConfigura
 | `exencionPago`                   | `alternar`, `historial`, `iterarHistorial`                                                                                              | `/v1/admin/billing/users/:userId/payment-exemption[/history]` |
 | `auditoria`                      | `listarLogs`, `iterarLogs`, `obtenerUso`                                                                                                | `/v1/admin/audit/*`                                           |
 
-No incluye `/v1/admin/billing/webhook/pagos`. Ningún método con efecto se reintenta.
+No incluye `/v1/admin/billing/webhook/pagos`. Ningún método con efecto se reintenta, salvo el único reintento ante `401` descrito arriba.
+
+#### `serviceClients`: registro local de Whatsapp-api
+
+Las credenciales y los permisos de un service client viven en Auth; Whatsapp-api solo guarda un registro local. `ServiceClient` = `{ id, clientId, name, enabled, allowedSourcePhones, createdAt, updatedAt }`:
+
+- `id`: id interno del service client en Auth (uuid). Es el `sub` del token y la clave de todas las rutas. Nunca cambia.
+- `clientId`: slug de Auth (`client_id` del token). Solo informativo (logs, UI); no identifica.
+- `crear({ id, clientId, name, enabled?, allowedSourcePhones? })` → `POST`. `409` si el `id` ya está registrado. Un `sub` sin registro habilitado recibe `403` en `./internal`.
+- `actualizar({ id, clientId?, name?, enabled? })` → `PATCH` parcial. `eliminar({ id })` borra el registro local, no el service client de Auth.
+- `telefonosOrigen.{listar,agregar,quitar}({ id, phone? })` administran `allowedSourcePhones` (`{ id, allowedSourcePhones }`).
+- Ya no existen `rotarSecret`, `secret` ni `scopes`: el secreto lo rota Auth y los permisos viajan en el token.
 
 ## 7. Internal (`./internal`)
 
 ### `crearClienteInterno(opciones): ClienteInterno`
 
-Mismas opciones que `crearClienteAdmin`. Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send`. Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
+Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el token lleva `aud: whatsapp-api` y el permiso del tipo de mensaje). Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send`. Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
 
 | Forma | Campos                                                                                                            |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
 | Texto | `{ phone, message (1..4096), sourcePhone }`                                                                       |
 | Media | `{ phone, sourcePhone, mediaUrl, mediaType: "image" \| "video" \| "audio" \| "document", caption? (hasta 1024) }` |
 
-`phone` y `sourcePhone`: 7 a 20 caracteres. `sourcePhone` debe estar en la allowlist del service client y tener sesión vinculada. Errores relevantes:
+`phone` y `sourcePhone`: 7 a 20 caracteres. `sourcePhone` debe estar en la allowlist del service client y tener sesión vinculada. Un `401` invalida el token (`invalidarToken`) y reintenta **una vez** con uno nuevo, también este `POST` (el `401` significa que la API no procesó el envío); si el segundo intento también devuelve `401`, ese es el resultado. Errores relevantes:
 
-| `codigo` | Causa                                                                                          |
-| -------- | ---------------------------------------------------------------------------------------------- |
-| `401`    | Firma, timestamp, replay o client desconocido (`codigoApi` trae el code)                       |
-| `403`    | Scope insuficiente para el tipo de mensaje, o `sourcePhone` fuera de la allowlist              |
-| `422`    | Body inválido (`detalles`) o `sourcePhone` desconocido                                         |
-| `429`    | Rate limit (`retryAfter`)                                                                      |
-| `503`    | La sesión del `sourcePhone` no está disponible, o red/timeout (ambiguo: el mensaje pudo salir) |
+| `codigo` | Causa                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| `401`    | Token inválido, vencido o de otra audiencia, tras el reintento con token nuevo (`codigoApi`)                  |
+| `403`    | Token sin el permiso del tipo de mensaje, `sub` sin registro habilitado o `sourcePhone` fuera de la allowlist |
+| `422`    | Body inválido (`detalles`) o `sourcePhone` desconocido                                                        |
+| `429`    | Rate limit (`retryAfter`)                                                                                     |
+| `503`    | La sesión del `sourcePhone` no está disponible, o red/timeout (ambiguo: el mensaje pudo salir)                |
 
-### Firma S2S
+### Autenticación con token de servicio
 
-Cada intento se firma con HMAC-SHA-256 sobre un canonical string de 7 líneas: `METHOD`, `PATH`, query canónico (ordenado y recodificado RFC 3986), timestamp (epoch en segundos), nonce (32 hex, nuevo por intento), `clientId` y SHA-256 del body. Headers: `x-eva-client-id`, `x-eva-timestamp`, `x-eva-nonce`, `x-eva-signature` (`sha256=<hex>`). El nonce es de un solo uso en el servidor, por eso los `POST` no se reintentan. Los `GET` con reintento firman de nuevo con nonce nuevo. Un body `FormData` no se puede firmar (sus bytes no se conocen de antemano y se firmaría vacío, lo que la API rechaza con `401`): el autenticador S2S declara `soportaMultipart: false` y el cliente responde `400` con `origen: "local"` sin llamar a la red. La fuente de verdad del algoritmo es `@eva_solutions/auth-sdk`; ver [ADR-002](./decisions.md#adr-002--firma-s2s-propia-con-test-de-contrato-contra-auth-sdk).
+`./admin` e `./internal` envían `Authorization: Bearer <token>`. El SDK no emite ni renueva tokens y no depende del auth-sdk: `obtenerToken` (tu proveedor, que cachea y renueva) se invoca en cada intento de request. Si lanza o devuelve algo que no es un string no vacío, la request no se envía y el resultado es `500` con `origen: "local"` (sin el motivo, que podría contener datos sensibles). Única excepción: si el error trae un `code` con forma de código OAuth (minúsculas y `_`, p. ej. `invalid_client`, `temporarily_unavailable`), se expone en `detalles: { code }` para diagnosticar; códigos de red (`ECONNREFUSED`) o cualquier otro valor se descartan. Si `obtenerToken` lanza, nunca escapa una excepción.
+
+Ante un `401`, el http client invoca `invalidarToken(tokenRechazado)` y reintenta **una sola vez**, en cualquier método. El token rechazado permite al proveedor invalidar solo si sigue siendo ese (evita la estampida de tokens con requests concurrentes). **Sin `invalidarToken` no hay reintento**: saldría con el mismo token cacheado y el `401` se devuelve. Si `invalidarToken` lanza, se devuelve el `401` sin reintentar; si `obtenerToken` lanza en el reintento, el resultado es el `500` local. En ambos casos el error se devuelve como `Resultado`, no se lanza. Se reintenta en cualquier método: el `401` significa que la API no procesó la request, así que reintentar un `POST` no duplica nada. El reintento no consume el presupuesto de `reintentos`. Un segundo `401` se devuelve tal cual. Ver [ADR-009](./decisions.md#adr-009--bearer-de-servicio-con-proveedor-de-tokens-inyectado). Como Bearer no firma el body, un `FormData` es válido con estos clientes.
 
 ## 8. Exports comunes
 
-Todos los subpaths re-exportan `ErrorConfiguracion`, `esExitoso`, `esFallido` y los tipos `Resultado`, `ErrorResultado`, `OrigenError`, `CodigoErrorHttp`. `.`, `./admin` e `./internal` exportan además `OpcionesOperacion`; `./admin` e `./internal` exportan `crearHttpClientS2S`, `HttpClient` y `OpcionesClienteS2S` para casos avanzados (p. ej. `reintentar` por petición).
+Todos los subpaths re-exportan `ErrorConfiguracion`, `esExitoso`, `esFallido` y los tipos `Resultado`, `ErrorResultado`, `OrigenError`, `CodigoErrorHttp`. `.`, `./admin` e `./internal` exportan además `OpcionesOperacion`; `./admin` e `./internal` exportan `crearHttpClientConToken`, `HttpClient` y `OpcionesClienteConToken` para casos avanzados (p. ej. `reintentar` por petición).

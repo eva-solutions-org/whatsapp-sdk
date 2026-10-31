@@ -1,7 +1,7 @@
 import { recolectar } from "../../helpers/iteradores.js";
 import { describe, expect, it } from "vitest";
 import { respuestaError, respuestaJson, respuestaJsonData } from "../../helpers/mock-fetch.js";
-import { crearAdminPrueba, esperarHeadersS2S, peticion } from "../../helpers/ayudas-s2s.js";
+import { crearAdminPrueba, esperarBearer, peticion } from "../../helpers/ayudas-token.js";
 
 describe("admin.pagos", () => {
   it("obtener hace GET /pagos/{id} y entrega { local, pasarela }", async () => {
@@ -17,7 +17,7 @@ describe("admin.pagos", () => {
     const enviada = peticion(fetchMock);
     expect(enviada.metodo).toBe("GET");
     expect(enviada.ruta).toBe("/v1/admin/billing/pagos/clxyz123abc");
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("obtener acepta pasarela null (pago sin id externo)", async () => {
@@ -56,7 +56,7 @@ describe("admin.pagos", () => {
     expect(enviada.metodo).toBe("POST");
     expect(enviada.ruta).toBe("/v1/admin/billing/pagos/clxyz123abc/cancelar");
     expect(enviada.cuerpo).toBeUndefined();
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("cancelar mapea el 409 de estado terminal", async () => {
@@ -80,7 +80,7 @@ describe("admin.pagos", () => {
     expect(enviada.metodo).toBe("POST");
     expect(enviada.ruta).toBe("/v1/admin/billing/pagos/clxyz123abc/refund");
     expect(enviada.cuerpo).toEqual({ monto: "4.00" });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("reembolsar total manda body vacío {}", async () => {
@@ -133,7 +133,7 @@ describe("admin.exencionPago", () => {
       reason: "Beta tester oficial del programa de acceso anticipado",
       expiresAt: "2026-12-31T23:59:59.000Z",
     });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("alternar mapea el 422 de vencimiento en el pasado", async () => {
@@ -180,7 +180,7 @@ describe("admin.exencionPago", () => {
       exempt: "false",
       soloVigente: "false",
     });
-    esperarHeadersS2S(enviada.headers);
+    esperarBearer(enviada.headers);
   });
 
   it("historial mapea el 400 de cursor inválido", async () => {

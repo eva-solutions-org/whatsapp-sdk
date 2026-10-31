@@ -10,7 +10,7 @@ flowchart LR
   A --> C[crearClienteAdmin]
   A --> D[crearClienteInterno]
   B --> H[HttpClient + autenticador x-api-key]
-  C --> I[HttpClient + autenticador S2S]
+  C --> I[HttpClient + autenticador Bearer]
   D --> I
   H --> API[Whatsapp-api]
   I --> API
@@ -26,9 +26,8 @@ Un paquete, cinco entry points (`src/index.ts`, `webhooks.ts`, `ws.ts`, `admin.t
 src/
 ├── index.ts, webhooks.ts, ws.ts, admin.ts, internal.ts   # un entry por subpath
 ├── core/
-│   ├── cliente/        # factories, validarBaseUrl, construirHttpClient, crearHttpClientS2S
-│   ├── http-client/    # crearHttpClient, autenticador, reintentos, mapeo de errores, segmentoRuta
-│   ├── s2s/            # firma HMAC S2S con WebCrypto
+│   ├── cliente/        # factories, validarBaseUrl, construirHttpClient, crearHttpClientConToken
+│   ├── http-client/    # crearHttpClient, autenticadores (x-api-key, Bearer), reintentos, mapeo de errores, segmentoRuta
 │   ├── validacion/     # validarEntrada (422 local), schemas comunes, enumTolerante
 │   ├── paginacion/     # iterarPaginas, iterarCursor
 │   ├── errors/         # ErrorConfiguracion
@@ -45,15 +44,15 @@ Features por subpath: `mensajes`, `sesion`, `programados`, `webhooks-fallidos`, 
 
 ## 3. Un `HttpClient`, tres clientes
 
-`construirHttpClient(opciones, autenticador)` es el punto único de validación (`baseUrl`, `timeout`, `reintentos`). Lo usan `crearCliente` (autenticador `x-api-key`), `crearClienteAdmin` y `crearClienteInterno` (autenticador S2S). Cada feature es una factory `(http) => facade`.
+`construirHttpClient(opciones, autenticador)` es el punto único de validación (`baseUrl`, `timeout`, `reintentos`). Lo usan `crearCliente` (autenticador `x-api-key`), `crearClienteAdmin` y `crearClienteInterno` (autenticador Bearer: `autenticadorBearer`, con el proveedor de tokens que pasa el consumidor). Cada feature es una factory `(http) => facade`.
 
 ## 4. Flujo HTTP de una petición
 
-1. **Validación local:** `validarEntrada(schema, input)`. Si falla, retorna `422` y no sale nada (ni se firma).
+1. **Validación local:** `validarEntrada(schema, input)`. Si falla, retorna `422` y no sale nada.
 2. **Construcción de la URL:** `path` contra `baseUrl`; si el path cambia al normalizarse (`..`, `//host`, `?` incrustado), `400 Ruta inválida`. Los segmentos dinámicos pasan por `segmentoRuta`.
-3. **Intento:** combina `AbortSignal.timeout`, `signal` del cliente y `signal` de la operación; el autenticador agrega headers **en cada intento**; `fetch` con `redirect: "error"`.
+3. **Intento:** combina `AbortSignal.timeout`, `signal` del cliente y `signal` de la operación; el autenticador agrega headers **en cada intento** (el Bearer pide el token a `obtenerToken`); `fetch` con `redirect: "error"`.
 4. **Respuesta:** 2xx se desenvuelve (`{ data }` → `data`, o el JSON completo si trae otras claves como `pagination`) y se valida con el schema; no-2xx se mapea a `ErrorResultado`.
-5. **Reintento:** solo si la política lo permite (ver [configuration.md](./configuration.md#reintentos)).
+5. **Reintento:** solo si la política lo permite (ver [configuration.md](./configuration.md#reintentos)). Aparte, si el autenticador declara `ante401` (el Bearer lo hace), un `401` lo invoca (invalida el token) y reintenta **una vez** en cualquier método, sin consumir el presupuesto de reintentos.
 
 ## 5. Webhooks y eventos
 

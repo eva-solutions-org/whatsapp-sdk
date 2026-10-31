@@ -1,18 +1,20 @@
 # Architecture Decision Records (ADRs) — `@eva_solutions/whatsapp-sdk`
 
-Decisiones de arquitectura de la versión inicial (0.1.0). Los ADRs son **append-only**: una decisión reemplazada no se borra ni se renumera, solo cambia su campo `Estado` y se agrega una nota.
+Decisiones de arquitectura de la versión inicial (0.1.0) y sus cambios posteriores. Los ADRs son **append-only**: una decisión reemplazada no se borra ni se renumera, solo cambia su campo `Estado` y se agrega una nota.
 
 El "por qué" de cada ADR proviene de los comentarios del código y de las decisiones registradas durante la construcción del SDK (campo **Fuente**). Donde no quedó registrada una alternativa descartada, el ADR lo dice en vez de reconstruirla.
 
-| ADR                                                                    | Tema                                                  | Estado  |
-| ---------------------------------------------------------------------- | ----------------------------------------------------- | ------- |
-| [001](#adr-001--plantilla-de-pagos-sdk-con-subpaths-por-superficie)    | Plantilla del SDK de Pagos + subpaths por superficie  | Vigente |
-| [002](#adr-002--firma-s2s-propia-con-test-de-contrato-contra-auth-sdk) | Firma S2S propia con test de contrato contra auth-sdk | Vigente |
-| [003](#adr-003--sin-capa-adapter-por-feature)                          | Sin capa adapter por feature                          | Vigente |
-| [004](#adr-004--validación-local-con-422-antes-de-enviar)              | Validación local con 422 antes de enviar              | Vigente |
-| [005](#adr-005--enums-y-eventos-tolerantes-a-valores-nuevos-de-la-api) | Enums y eventos tolerantes a valores nuevos           | Vigente |
-| [006](#adr-006--reintentos-solo-en-get-sin-efecto-y-timeout-de-35-s)   | Reintentos solo en GET sin efecto; timeout de 35 s    | Vigente |
-| [007](#adr-007--media-siempre-como-multipart)                          | Media siempre como multipart                          | Vigente |
+| ADR                                                                      | Tema                                                   | Estado                  |
+| ------------------------------------------------------------------------ | ------------------------------------------------------ | ----------------------- |
+| [001](#adr-001--plantilla-de-pagos-sdk-con-subpaths-por-superficie)      | Plantilla del SDK de Pagos + subpaths por superficie   | Vigente                 |
+| [002](#adr-002--firma-s2s-propia-con-test-de-contrato-contra-auth-sdk)   | Firma S2S propia con test de contrato contra auth-sdk  | Reemplazada por ADR-009 |
+| [003](#adr-003--sin-capa-adapter-por-feature)                            | Sin capa adapter por feature                           | Vigente                 |
+| [004](#adr-004--validación-local-con-422-antes-de-enviar)                | Validación local con 422 antes de enviar               | Vigente                 |
+| [005](#adr-005--enums-y-eventos-tolerantes-a-valores-nuevos-de-la-api)   | Enums y eventos tolerantes a valores nuevos            | Vigente                 |
+| [006](#adr-006--reintentos-solo-en-get-sin-efecto-y-timeout-de-35-s)     | Reintentos solo en GET sin efecto; timeout de 35 s     | Vigente                 |
+| [007](#adr-007--media-siempre-como-multipart)                            | Media siempre como multipart                           | Vigente                 |
+| [008](#adr-008--internal-solo-hmac-auth---api-conserva-su-adaptador-jwt) | `./internal` solo HMAC; Auth conserva su adaptador JWT | Reemplazada por ADR-009 |
+| [009](#adr-009--bearer-de-servicio-con-proveedor-de-tokens-inyectado)    | Bearer de servicio con proveedor de tokens inyectado   | Vigente                 |
 
 ---
 
@@ -45,7 +47,7 @@ No quedó registrado qué otras formas de empaquetado se evaluaron (por ejemplo,
 
 ## ADR-002 — Firma S2S propia con test de contrato contra auth-sdk
 
-**Estado**: Vigente
+**Estado**: Reemplazada por [ADR-009](#adr-009--bearer-de-servicio-con-proveedor-de-tokens-inyectado) (2026-10-31). La firma HMAC, `src/core/s2s`, el test de contrato y el tarball de `vendor/` se retiraron.
 **Fecha**: 2026-10-30
 
 ### Contexto
@@ -162,12 +164,13 @@ Un fallback dentro del schema público de `message`: descartado porque TypeScrip
 
 ### Contexto
 
-Reintentar un envío puede duplicar un mensaje; en S2S, además, cada firma lleva un nonce de un solo uso. Algunos GET tienen efecto lateral (el QR crea la sesión y espera hasta 30 s; el secreto de webhook envía un WhatsApp). Un fallo por red o timeout en un envío es ambiguo: el mensaje pudo salir.
+Reintentar un envío puede duplicar un mensaje. Algunos GET tienen efecto lateral (el QR crea la sesión y espera hasta 30 s; el secreto de webhook envía un WhatsApp). Un fallo por red o timeout en un envío es ambiguo: el mensaje pudo salir.
 
 ### Decisión
 
 - Se reintentan solo los `GET` sin efecto ante red/timeout, 5xx y 429, con backoff exponencial y `Retry-After`.
 - `POST`, `PUT` y `PATCH` no se reintentan. Todos los `DELETE` y los `GET` con efecto fijan `reintentar: false`.
+- _Nota (ADR-009):_ en `./admin` e `./internal` un `401` se reintenta una vez con token nuevo, en cualquier método, porque la API no procesó la request.
 - Existe el override por petición `reintentar: true | false` en el `HttpClient`.
 - Timeout por defecto de **35 s por intento**, para cubrir la espera de QR de la API (hasta 30 s); sobreescribible por cliente y por operación.
 
@@ -205,7 +208,7 @@ Enviar JSON cuando se usa `url`: descartada porque la API lo rechaza.
 ### Consecuencias
 
 - (+) Funciona con los dos orígenes (`url` y `file`) contra el contrato real.
-- (−) Con `FormData` el body firmado en S2S sería vacío (la API respondería `401`): el autenticador S2S declara `soportaMultipart: false` y el cliente rechaza un `FormData` con `400` local. No aplica hoy porque la media no se envía por `./internal` (que usa `mediaUrl` en JSON).
+- (−) _Nota (ADR-009):_ con la firma HMAC un `FormData` no se podía firmar y se rechazaba en `./admin` e `./internal`. Con Bearer ya no hay firma del body y esa restricción se retiró.
 
 **Fuente**: Engram `whatsapp-sdk T2: media send es multipart-only`.
 
@@ -213,7 +216,7 @@ Enviar JSON cuando se usa `url`: descartada porque la API lo rechaza.
 
 ## ADR-008 — `./internal` solo HMAC; Auth - API conserva su adaptador JWT
 
-**Estado**: Vigente
+**Estado**: Reemplazada por [ADR-009](#adr-009--bearer-de-servicio-con-proveedor-de-tokens-inyectado) (2026-10-31). Se cumplió su cláusula «Cuándo revisarlo»: Auth emite tokens de servicio, `./internal` pasó a Bearer y Auth migra su adaptador de OTP a este SDK.
 **Fecha**: 2026-10-31
 
 ### Contexto
@@ -234,3 +237,35 @@ Enviar JSON cuando se usa `url`: descartada porque la API lo rechaza.
 - (+) Los consumidores nuevos funcionan hoy con el SDK, sin cambios en ningún repo.
 - (−) El contrato de `/v1/internal/messages/send` existe en dos lugares (este SDK y el adaptador de Auth).
 - **Cuándo revisarlo**: el objetivo de la plataforma es que Auth emita JWT de servicio a todos los servicios (OAuth2 _client credentials_) antes de conectar un segundo producto, porque con varios productos y servicios compartidos los secretos HMAC se multiplican por cada par. En ese mismo cambio, `./internal` agrega Bearer y Auth migra a este SDK.
+
+---
+
+## ADR-009 — Bearer de servicio con proveedor de tokens inyectado
+
+**Estado**: Vigente
+**Fecha**: 2026-10-31
+
+### Contexto
+
+El diseño de identidad fase 1 (repo Ecosistema, `docs/diseno/2026-10-31-identidad-fase1.md`, §2 y §6) reemplaza la firma HMAC entre servicios por tokens de servicio (_client credentials_) emitidos por Auth: JWT de vida corta (300 s), una audiencia (`whatsapp-api`) y permisos por ruta. HMAC se conserva solo en el endpoint de tokens de Auth y en el admin de Auth. Whatsapp-api acepta únicamente Bearer en `/v1/internal/*` y `/v1/admin/*` (diseño §5), y su registro de service clients ya no guarda secreto ni permisos.
+
+### Decisión
+
+- `./internal` y `./admin` reciben `obtenerToken: () => Promise<string>` e `invalidarToken?: (tokenRechazado: string) => void` y envían `Authorization: Bearer <token>`. El SDK **no depende del auth-sdk**: el consumidor pasa su proveedor (p. ej. `createServiceTokenProvider`). El token se pide en cada intento; el caché y la renovación son del proveedor.
+- Ante un `401` el http client invoca `invalidarToken(tokenRechazado)` y reintenta **una sola vez**, también en métodos no idempotentes: un `401` significa que el servidor no procesó la request, así que no puede duplicar un envío. Se implementa en el punto de extensión `Autenticador` (`ante401`), no en cada operación. Un segundo `401` se devuelve; el reintento no consume `reintentos.maximo`. El token rechazado se pasa para que el proveedor invalide solo si sigue siendo ese (`invalidate(tokenRechazado?)` del auth-sdk), evitando una estampida de tokens con requests concurrentes. **Sin `invalidarToken` no hay reintento** (saldría con el mismo token). Si `invalidarToken` u `obtenerToken` lanzan, el error se devuelve como `Resultado` (solo `ErrorConfiguracion` se lanza); el `500` local no incluye el mensaje, solo un `code` OAuth no sensible en `detalles`.
+- Se retiran `src/core/s2s`, `crearHttpClientS2S`, el test de contrato contra el auth-sdk y la devDependency del tarball de `vendor/`. Se retira también `soportaMultipart` (Bearer no firma el body).
+- `./admin` `serviceClients` modela el registro local sin secreto ni permisos: `id` (el `sub` del token, uuid de Auth), `clientId` (slug informativo), `name`, `enabled`, `allowedSourcePhones`. Se retiran `rotarSecret`, `secret` y `scopes`.
+
+### Alternativas consideradas
+
+- **Depender del auth-sdk y obtener el token dentro del SDK**: descartada. Acopla el paquete a un SDK privado de Auth y a su versión; el diseño pide explícitamente que el consumidor pase el proveedor.
+- **Reintentar solo los métodos idempotentes ante `401`**: descartada. El `401` ocurre antes de procesar la request, así que reintentar un `POST` es seguro y el envío de mensajes es justo el `POST`.
+
+### Consecuencias
+
+- (+) Sin secretos HMAC por par de servicios; los permisos y su revocación viven en Auth.
+- (+) La única dependencia sigue siendo `zod` y desaparece el tarball vendorizado.
+- (−) Cambio incompatible: versión mayor. Los consumidores migran de `clientId`/`secretoHex` a un proveedor de tokens.
+- (−) Si `obtenerToken` devuelve siempre el mismo token vencido, el reintento ante `401` también falla: `invalidarToken` debe descartar el caché. El `code` que se expone en `detalles` está acotado a `^[a-z][a-z0-9_]{0,63}$`, así no pasan mensajes libres ni códigos de red.
+
+**Fuente**: diseño de identidad fase 1 (§2, §5, §6); Engram `odd/identidad-fase1/tasks` (S7).

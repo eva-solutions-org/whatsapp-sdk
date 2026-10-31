@@ -56,7 +56,7 @@ export const respuestaValidacion422 = (
   );
 
 /** 401 S2S uniforme del s2s-error-mapper: `{ error: { code, message } }`. */
-export const respuestaErrorS2S = (
+export const respuestaErrorToken = (
   status = 401,
   code = "unauthorized",
   message = "Acceso no autorizado",

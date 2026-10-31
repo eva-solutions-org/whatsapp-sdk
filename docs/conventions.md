@@ -26,7 +26,7 @@ Firma unificada en todo el SDK: `(input, opciones?: OpcionesOperacion)`; sin inp
 
 ## 4. Validación en los bordes
 
-- **Entrada del consumidor:** `validarEntrada(schema, input)` antes de enviar y de firmar. Falla → `422` con `detalles` y sin request.
+- **Entrada del consumidor:** `validarEntrada(schema, input)` antes de enviar. Falla → `422` con `detalles` y sin request.
 - **Respuesta de la API:** `schemaRespuesta` con `safeParse`. Falla → `502`.
 - **Enums de respuesta:** `enumTolerante` (acepta cualquier string); los de entrada son `z.enum` estrictos.
 - **Segmentos de path:** siempre `segmentoRuta(valor)`. Los ids vacíos se rechazan en el schema (`idSchema`).
@@ -38,8 +38,8 @@ Entre features y desde los entry points, solo vía el `index.ts` (barrel) de cad
 ## 6. Tests
 
 - Sufijo `*.mock.test.ts`: `fetch` y `WebSocket` simulados, sin red.
-- Helpers en `tests/helpers/` (`mock-fetch`, `fixtures`, `ayudas-s2s`, `iteradores`).
-- `tests/s2s/contrato-auth-sdk.mock.test.ts` compara la firma S2S con la de `@eva_solutions/auth-sdk`: si el algoritmo cambia allá, falla aquí.
+- Helpers en `tests/helpers/` (`mock-fetch`, `fixtures`, `ayudas-token`, `iteradores`).
+- El reintento ante `401` se prueba en dos niveles: el http client (`tests/core/http-client.mock.test.ts`) y los clientes públicos (`tests/core/crear-cliente.mock.test.ts`, `tests/features/internal/`).
 
 ## 7. JSDoc
 
@@ -47,7 +47,7 @@ Documenta el contrato observable (códigos que puede devolver, si se reintenta, 
 
 ## 8. Secretos nunca en errores
 
-Ningún mensaje de error, log o `ErrorConfiguracion` incluye `apiKey`, `secretoHex`, secreto de webhook ni el `baseUrl` recibido. Un test debe cubrirlo cuando se agrega un punto de error nuevo.
+Ningún mensaje de error, log o `ErrorConfiguracion` incluye `apiKey`, el token de servicio, secreto de webhook ni el `baseUrl` recibido. Un test debe cubrirlo cuando se agrega un punto de error nuevo.
 
 ## 9. Anti-patterns
 

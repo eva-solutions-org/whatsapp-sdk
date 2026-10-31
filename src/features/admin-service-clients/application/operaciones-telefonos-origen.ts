@@ -3,22 +3,29 @@ import type { HttpClient } from "../../../core/http-client/index.js";
 import type { Resultado } from "../../../core/types/index.js";
 import { validarEntrada } from "../../../core/validacion/index.js";
 import type { OpcionesOperacion } from "../../../core/validacion/index.js";
-import { allowlistSchema, slugInputSchema, telefonoOrigenInputSchema } from "../domain/index.js";
-import type { Allowlist, SlugInput, TelefonoOrigenInput } from "../domain/index.js";
+import {
+  allowlistSchema,
+  idServiceClientInputSchema,
+  telefonoOrigenInputSchema,
+} from "../domain/index.js";
+import type { Allowlist, IdServiceClientInput, TelefonoOrigenInput } from "../domain/index.js";
 import { RUTA_SERVICE_CLIENTS } from "./operaciones-service-client.js";
 
-const rutaTelefonos = (slug: string): string =>
-  `${RUTA_SERVICE_CLIENTS}/${segmentoRuta(slug)}/source-phones`;
+const rutaTelefonos = (id: string): string =>
+  `${RUTA_SERVICE_CLIENTS}/${segmentoRuta(id)}/source-phones`;
 
-/** GET /v1/admin/service-clients/{slug}/source-phones. Vacía = el client no puede enviar. */
+/** GET /v1/admin/service-clients/{id}/source-phones. Vacía = el client no puede enviar. */
 export const listarTelefonosOrigen =
   (http: HttpClient) =>
-  async (entrada: SlugInput, opciones?: OpcionesOperacion): Promise<Resultado<Allowlist>> => {
-    const validada = validarEntrada(slugInputSchema, entrada);
+  async (
+    entrada: IdServiceClientInput,
+    opciones?: OpcionesOperacion,
+  ): Promise<Resultado<Allowlist>> => {
+    const validada = validarEntrada(idServiceClientInputSchema, entrada);
     if (!validada.success) {
       return validada;
     }
-    return http.get(rutaTelefonos(validada.data.slug), {
+    return http.get(rutaTelefonos(validada.data.id), {
       schemaRespuesta: allowlistSchema,
       signal: opciones?.signal,
       timeout: opciones?.timeout,
@@ -36,9 +43,9 @@ export const agregarTelefonoOrigen =
     if (!validada.success) {
       return validada;
     }
-    const { slug, phone } = validada.data;
+    const { id, phone } = validada.data;
     return http.post(
-      rutaTelefonos(slug),
+      rutaTelefonos(id),
       { phone },
       { schemaRespuesta: allowlistSchema, signal: opciones?.signal, timeout: opciones?.timeout },
     );
@@ -55,8 +62,8 @@ export const quitarTelefonoOrigen =
     if (!validada.success) {
       return validada;
     }
-    const { slug, phone } = validada.data;
-    return http.delete(`${rutaTelefonos(slug)}/${segmentoRuta(phone)}`, {
+    const { id, phone } = validada.data;
+    return http.delete(`${rutaTelefonos(id)}/${segmentoRuta(phone)}`, {
       schemaRespuesta: allowlistSchema,
       // Un reintento tras un éxito perdido recibiría 404 y ocultaría el resultado real.
       reintentar: false,
