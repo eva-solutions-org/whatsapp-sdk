@@ -36,6 +36,16 @@ pnpm add @eva_solutions/whatsapp-sdk
 
 > Requiere Node 22 o superior (`engines.node`).
 
+Según el entorno del consumidor:
+
+| Entorno       | Instalación                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `production`  | `pnpm add @eva_solutions/whatsapp-sdk` (estable, dist-tag `latest`; sale al crear una GitHub Release)    |
+| `development` | `pnpm add @eva_solutions/whatsapp-sdk@dev` (snapshot `X.Y.Z-dev-<timestamp>`)                            |
+| `local`       | `pnpm build` aquí y `pnpm link <ruta a este checkout>` en el consumidor; no commitees `file:` ni `link:` |
+
+Detalle en [CONTRIBUTING.md](./CONTRIBUTING.md#entornos-y-publicación-mantenedores).
+
 ## Quickstart
 
 ### `.` — API pública con `x-api-key`

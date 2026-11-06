@@ -1,37 +1,129 @@
 name: Release
 
-# Se dispara solo cuando el CI de un push a main termina bien: nunca se publica con el CI en rojo.
+# Un único archivo: el trusted publishing de npm está atado al nombre de este workflow.
+#   push a development -> checks (lint, typecheck, test, build) y luego snapshot X.Y.Z-dev-<timestamp>
+#                         (dist-tag dev), sin commits ni tags de git. Nunca se publica con los checks en rojo.
+#   push a main        -> solo abre o actualiza el Version PR (job version-pr); un push a main no publica.
+#   release            -> al publicar una GitHub Release vX.Y.Z (no prerelease) se corren los checks y luego
+#                         se publica la versión estable (dist-tag latest).
+# Los checks viven en este archivo (job `checks`) y son `needs` de los jobs que publican: no dependen de
+# `workflow_run`, que solo dispara con el archivo ya en la rama por defecto y apunta a la punta de main.
+# Los jobs que publican usan el Environment `npm` (ver CONTRIBUTING.md).
+
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches:
       - main
+      - development
+  release:
+    types: [published]
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Un release a la vez por rama o tag; no se cancela uno a medias.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  release:
-    name: Release
+  version-pr:
+    name: Version PR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # head_sha == github.sha: solo publica si main no avanzó desde el commit que validó el CI
-    # (changesets/action usa GITHUB_SHA, que en workflow_run es la punta de main); si avanzó,
-    # lo publica el CI del commit más nuevo.
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_sha == github.sha
     permissions:
-      contents: write
+      contents: write # empuja la rama changeset-release
       pull-requests: write
-      id-token: write # OIDC trusted publishing + provenance
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          # El commit que validó el CI (main pudo avanzar desde entonces).
-          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Sin `publish`: la action solo versiona (version + CHANGELOG) y nunca publica.
+      - name: Create or update the Version PR
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  checks:
+    name: Checks (lint, typecheck, test, build)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/development') || (github.event_name == 'release' && !github.event.release.prerelease)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test:run
+
+      - name: Build
+        run: pnpm run build
+
+  publish:
+    name: Release (stable)
+    needs: checks
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing + provenance
+    steps:
+      - name: Checkout (tagged commit)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate the release tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag '$TAG' does not match v$version (package.json). Nothing published."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::The commit of tag '$TAG' is not in main. Nothing published."
+            exit 1
+          fi
+          echo "Tag $TAG matches the package version and its commit is in main."
+        env:
+          TAG: ${{ github.event.release.tag_name }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -46,13 +138,117 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Create Release Pull Request or Publish
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
-        with:
-          publish: pnpm exec changeset publish
-          createGithubReleases: true
+      - name: Build
+        run: pnpm run build
+
+      # Bootstrap only: the userconfig holds a reference to ${NPM_TOKEN}, never its value; npm expands it
+      # from the environment at run time. Without the secret, npm falls back to OIDC.
+      - name: Configure bootstrap token (only if the secret exists)
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > "$RUNNER_TEMP/npmrc"
+            echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/npmrc" >> "$GITHUB_ENV"
+            echo "NPM_TOKEN present: bootstrap publish with token."
+          else
+            echo "No NPM_TOKEN: publishing with OIDC."
+          fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # El tag de la release es del mantenedor: changeset no crea tags propios.
+      - name: Publish (dist-tag latest)
+        run: pnpm exec changeset publish --no-git-tag
+        env:
           PNPM_CONFIG_PROVENANCE: "true"
-          # Bootstrap only (first publish creates the package). Removed in U6b.
+          # Bootstrap only (first publish creates the package). Removed once trusted publishing is set up.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  snapshot:
+    name: Release (dev snapshot)
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read # no escribe en git: ni commits ni tags
+      id-token: write # OIDC trusted publishing + provenance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: pnpm
+          # no registry-url: avoids a generated .npmrc with an empty NODE_AUTH_TOKEN competing with OIDC
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Con useCalculatedVersion el snapshot es <versión calculada>-dev-<timestamp>.
+      - name: Version snapshot
+        run: pnpm exec changeset version --snapshot dev
+
+      # Sin changesets pendientes `version` no cambia nada: no se publica (evita subir la versión estable con tag dev).
+      - name: Check pending changesets
+        id: pending
+        run: |
+          if git diff --quiet -- package.json; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "No pending changesets: nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.pending.outputs.publish == 'true'
+        run: pnpm run build
+
+      # Bootstrap only: the userconfig holds a reference to ${NPM_TOKEN}, never its value; npm expands it
+      # from the environment at run time. Without the secret, npm falls back to OIDC.
+      - name: Configure bootstrap token (only if the secret exists)
+        if: steps.pending.outputs.publish == 'true'
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > "$RUNNER_TEMP/npmrc"
+            echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/npmrc" >> "$GITHUB_ENV"
+            echo "NPM_TOKEN present: bootstrap publish with token."
+          else
+            echo "No NPM_TOKEN: publishing with OIDC."
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish snapshot (tag dev)
+        if: steps.pending.outputs.publish == 'true'
+        run: pnpm exec changeset publish --tag dev --no-git-tag
+        env:
+          PNPM_CONFIG_PROVENANCE: "true"
+          # Bootstrap only (first publish creates the package). Removed once trusted publishing is set up.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Not verified whether the registry sets `latest` on the first publish made with --tag. If it did, a
+      # plain `npm i` would install a -dev- build, so it is removed. Runs after the publish: a failure here
+      # is a warning, never a red job. It uses the bootstrap token if present; otherwise OIDC, which only
+      # supports dist-tag with npm >= 11.21.0 and "Allow npm dist-tag" on the trusted publisher.
+      - name: Ensure latest is not a snapshot
+        if: steps.pending.outputs.publish == 'true'
+        run: |
+          name=$(node -p "require('./package.json').name")
+          latest=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
+          case "$latest" in
+            *-dev-*)
+              echo "latest points to snapshot $latest: removing the tag."
+              npm dist-tag rm "$name" latest || echo "::warning::Could not remove latest ($latest). Run: npm dist-tag rm $name latest"
+              ;;
+            *) echo "latest is '${latest:-unset}': nothing to do." ;;
+          esac
+        env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

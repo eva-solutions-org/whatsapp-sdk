@@ -15,7 +15,7 @@ Scripts (`pnpm run <script>`):
 | `test` / `test:run` | Vitest en watch / una corrida                                       |
 | `changeset`         | Registra un cambio para el próximo release                          |
 
-- **Ramas:** `main` publica: `.github/workflows/release.yml` corre `changesets/action` cuando el CI de un push a `main` termina en éxito. Detalle en [`CONTRIBUTING.md`](CONTRIBUTING.md#publicación-mantenedores).
+- **Ramas:** `main` solo abre el Version PR; la versión estable se publica al crear una GitHub Release `vX.Y.Z` desde `main` (`.github/workflows/release.yml`; los `checks` van dentro del workflow y son `needs` de la publicación). Tras cada release estable, back-merge `main` → `development`. Detalle en [`CONTRIBUTING.md`](CONTRIBUTING.md#publicación-mantenedores).
 - **Commits:** conventional commits; `feat!` o `BREAKING CHANGE:` para cambios incompatibles. Sin atribución de IA ni co-autores.
 - **Docs:** `docs/` es la fuente de verdad. Este archivo solo indexa: las reglas viven en `docs/`. Actualiza el documento afectado en el mismo cambio.
 - **Repo público:** nunca commitees secretos, tokens, URLs internas ni topología privada.
