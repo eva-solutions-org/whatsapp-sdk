@@ -67,6 +67,29 @@ if (!r.success) {
 console.log(r.data.message);
 ```
 
+#### Modo bot (opcional)
+
+Por defecto el cliente envía tal cual (`modo: "humano"`, sin llamadas extra). Con `modo: "bot"` cada envío verifica que el número exista (con caché), marca leído si pasas `messageIds`, muestra "escribiendo" un tiempo proporcional al texto y recién entonces envía:
+
+```typescript
+const bot = crearCliente({
+  apiKey: process.env.EVA_WHATSAPP_API_KEY!,
+  baseUrl: process.env.EVA_WHATSAPP_BASE_URL!,
+  modo: "bot",
+  bot: { escritura: { topeMs: 1500 } }, // p. ej. OTP: escritura breve; opcional
+});
+
+const r = await bot.mensajes.enviarTexto(
+  { phone: "59171234567", message: "Hola, ¿en qué te ayudo?" },
+  { messageIds: ["3EB0A1B2C3D4E5F6A7B8"] }, // mensajes del contacto a marcar leídos; opcional
+);
+if (!r.success && r.codigoApi === "numero_sin_whatsapp") {
+  // el número no tiene WhatsApp: no se envió nada
+}
+```
+
+Si la verificación falla (`429`, `503`, red) con un número no cacheado, por defecto **no se envía** y devuelve `codigoApi: "verificacion_no_disponible"` (reintentable); `bot: { siVerificacionFalla: "enviar" }` avisa por `alAdvertir` y envía, que es lo recomendable para un cliente de OTP. Marcar leído y escribir sí son best-effort. La caché de existencia es **por cliente**: crear un cliente por request (p. ej. en Workers) la anula y gasta el cupo de 120 consultas/hora. Detalle y parámetros en [docs/api.md](./docs/api.md#modo-bot). Las primitivas también se pueden usar sueltas: `cliente.chats.indicarEscritura`, `verificarExistencia`, `marcarLeido` y `cambiarPresencia`.
+
 `apiKey` y `baseUrl` son obligatorios. Si falta alguno o no es válido, `crearCliente` lanza `ErrorConfiguracion` de forma síncrona (los mensajes nunca incluyen sus valores).
 
 ### `./webhooks` — verificar la firma
