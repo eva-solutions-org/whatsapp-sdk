@@ -242,7 +242,7 @@ La API puede agregar tipos de evento sin que sea un error. Un evento con `type` 
 
 - **Servidor únicamente:** `apiKey`, los tokens de servicio y el secreto del webhook nunca van al navegador ni a logs.
 - **Webhooks:** la firma no incluye timestamp, así que un evento reenviado sigue siendo válido. Deduplica en tu handler (por ejemplo con `data.messageId` cuando el evento lo trae, o con `type` + `phone` + `timestamp`).
-- **Redirects:** el SDK los rechaza (`redirect: "error"`) para no filtrar credenciales a otro host.
+- **Redirects:** el SDK los rechaza (`redirect: "manual"`) para no filtrar credenciales a otro host.
 - **`baseUrl`:** solo origin (`https` o `http` en loopback), sin credenciales, path, query ni fragmento.
 
 Modelo de amenazas completo en [docs/security.md](./docs/security.md).

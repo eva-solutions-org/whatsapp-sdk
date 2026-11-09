@@ -77,7 +77,7 @@ describe("http-client: request saliente", () => {
     expect(url).toBe(`${BASE_URL_PRUEBA}/v1/send?a=1&c=x+y`);
     expect(init.method).toBe("POST");
     expect(init.body).toBe('{"to":"593","text":"hola"}');
-    expect(init.redirect).toBe("error");
+    expect(init.redirect).toBe("manual");
     const headers = headersDeLlamada(fetchMock);
     expect(headers.get("x-api-key")).toBe(API_KEY_TEST);
     expect(headers.get("content-type")).toBe("application/json");
@@ -362,9 +362,7 @@ describe("http-client: fallos técnicos", () => {
 
   it("retorna 503 de redirect sin reintentar", async () => {
     const { http, fetchMock } = crearHttpDePrueba(
-      () => {
-        throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
-      },
+      () => new Response(null, { status: 302, headers: { location: "https://otro.example" } }),
       { reintentos: { maximo: 2 } },
     );
 
