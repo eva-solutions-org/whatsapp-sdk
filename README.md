@@ -23,7 +23,7 @@ SDK TypeScript para consumir el servicio Whatsapp-api. Simple por defecto, con c
 | `@eva_solutions/whatsapp-sdk/webhooks` | Verificación de la firma HMAC de los webhooks y eventos tipados                                                     | secreto del webhook                       |
 | `@eva_solutions/whatsapp-sdk/ws`       | `conectarWs`: eventos en tiempo real con reconexión                                                                 | `x-api-key` (en `Sec-WebSocket-Protocol`) |
 | `@eva_solutions/whatsapp-sdk/admin`    | `crearClienteAdmin`: service clients, sesiones, QR del sistema, billing, pagos, exención, auditoría                 | token Bearer de servicio (Auth)           |
-| `@eva_solutions/whatsapp-sdk/internal` | `crearClienteInterno`: envío interno de mensajes                                                                    | token Bearer de servicio (Auth)           |
+| `@eva_solutions/whatsapp-sdk/internal` | `crearClienteInterno`: envío interno de mensajes, primitivas de chat y modo bot                                     | token Bearer de servicio (Auth)           |
 
 Cada subpath existe en ESM y CJS. Quien no usa un subpath no lo carga.
 
@@ -35,6 +35,16 @@ pnpm add @eva_solutions/whatsapp-sdk
 ```
 
 > Requiere Node 22 o superior (`engines.node`).
+
+Según el entorno del consumidor:
+
+| Entorno       | Instalación                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `production`  | `pnpm add @eva_solutions/whatsapp-sdk` (estable, dist-tag `latest`; sale al crear una GitHub Release)    |
+| `development` | `pnpm add @eva_solutions/whatsapp-sdk@dev` (snapshot `X.Y.Z-dev-<timestamp>`)                            |
+| `local`       | `pnpm build` aquí y `pnpm link <ruta a este checkout>` en el consumidor; no commitees `file:` ni `link:` |
+
+Detalle en [CONTRIBUTING.md](./CONTRIBUTING.md#entornos-y-publicación-mantenedores).
 
 ## Quickstart
 
@@ -56,6 +66,29 @@ if (!r.success) {
 }
 console.log(r.data.message);
 ```
+
+#### Modo bot (opcional)
+
+Por defecto el cliente envía tal cual (`modo: "humano"`, sin llamadas extra). Con `modo: "bot"` cada envío verifica que el número exista (con caché), marca leído si pasas `messageIds`, muestra "escribiendo" un tiempo proporcional al texto y recién entonces envía:
+
+```typescript
+const bot = crearCliente({
+  apiKey: process.env.EVA_WHATSAPP_API_KEY!,
+  baseUrl: process.env.EVA_WHATSAPP_BASE_URL!,
+  modo: "bot",
+  bot: { escritura: { topeMs: 1500 } }, // p. ej. OTP: escritura breve; opcional
+});
+
+const r = await bot.mensajes.enviarTexto(
+  { phone: "59171234567", message: "Hola, ¿en qué te ayudo?" },
+  { messageIds: ["3EB0A1B2C3D4E5F6A7B8"] }, // mensajes del contacto a marcar leídos; opcional
+);
+if (!r.success && r.codigoApi === "numero_sin_whatsapp") {
+  // el número no tiene WhatsApp: no se envió nada
+}
+```
+
+Si la verificación falla (`429`, `503`, red) con un número no cacheado, por defecto **no se envía** y devuelve `codigoApi: "verificacion_no_disponible"` (reintentable); `bot: { siVerificacionFalla: "enviar" }` avisa por `alAdvertir` y envía, que es lo recomendable para un cliente de OTP. Marcar leído y escribir sí son best-effort. La caché de existencia es **por cliente**: crear un cliente por request (p. ej. en Workers) la anula y gasta el cupo de 120 consultas/hora. Detalle y parámetros en [docs/api.md](./docs/api.md#modo-bot). Las primitivas también se pueden usar sueltas: `cliente.chats.indicarEscritura`, `verificarExistencia`, `marcarLeido` y `cambiarPresencia`.
 
 `apiKey` y `baseUrl` son obligatorios. Si falta alguno o no es válido, `crearCliente` lanza `ErrorConfiguracion` de forma síncrona (los mensajes nunca incluyen sus valores).
 
@@ -143,6 +176,27 @@ const r = await interno.mensajes.enviar({
 
 El token necesita `aud: whatsapp-api` y el permiso del tipo de mensaje (`messages:send:text` o `messages:send:media`). Su `sub` debe tener un registro habilitado en Whatsapp-api (`admin.serviceClients.crear`), si no la API responde `403`.
 
+#### Modo bot y chats internos
+
+Igual que el cliente público, `crearClienteInterno` acepta `modo: "bot"` (y `bot`, los mismos ajustes) para que una notificación parezca humana: cada `mensajes.enviar` verifica que el destino tenga WhatsApp (caché por cliente), muestra "escribiendo" un tiempo proporcional al texto y recién entonces envía. No marca leído (no existe en la vía interna), así que `messageIds` no aplica. Sin `modo` no hay llamadas extra.
+
+```typescript
+const interno = crearClienteInterno({
+  baseUrl: process.env.EVA_WHATSAPP_BASE_URL!,
+  obtenerToken: () => proveedor.getToken(),
+  invalidarToken: proveedor.invalidate,
+  modo: "bot",
+  bot: { siVerificacionFalla: "enviar" }, // opcional
+});
+
+const r = await interno.mensajes.enviar({ phone, message, sourcePhone });
+if (!r.success && r.codigoApi === "numero_sin_whatsapp") {
+  // el número no tiene WhatsApp: no se envió nada
+}
+```
+
+Las primitivas también se pueden usar sueltas: `interno.chats.verificarExistencia({ phone, sourcePhone })` e `interno.chats.indicarEscritura({ phone, sourcePhone, estado, segundos? })`. Basta el permiso de envío (`messages:send:text` o `messages:send:media`). El cupo de 120 consultas/hora de `exists` es por número remitente y se comparte con la vía pública. Detalle en [docs/api.md](./docs/api.md#7-internal-internal).
+
 ## Result Pattern y códigos
 
 Toda operación retorna `Promise<Resultado<T>>` y no lanza por fallos de negocio:
@@ -209,7 +263,7 @@ La API puede agregar tipos de evento sin que sea un error. Un evento con `type` 
 
 - **Servidor únicamente:** `apiKey`, los tokens de servicio y el secreto del webhook nunca van al navegador ni a logs.
 - **Webhooks:** la firma no incluye timestamp, así que un evento reenviado sigue siendo válido. Deduplica en tu handler (por ejemplo con `data.messageId` cuando el evento lo trae, o con `type` + `phone` + `timestamp`).
-- **Redirects:** el SDK los rechaza (`redirect: "error"`) para no filtrar credenciales a otro host.
+- **Redirects:** el SDK los rechaza (`redirect: "manual"`) para no filtrar credenciales a otro host.
 - **`baseUrl`:** solo origin (`https` o `http` en loopback), sin credenciales, path, query ni fragmento.
 
 Modelo de amenazas completo en [docs/security.md](./docs/security.md).

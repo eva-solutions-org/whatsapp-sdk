@@ -23,6 +23,8 @@ Requiere Node 22 o superior. El WebSocket usa el `WebSocket` global (Node 22+, B
 | `signal`     | —                  | Cancela todas las operaciones en vuelo del cliente                                                                                                                                                           |
 | `reintentos` | ver abajo          | `{ maximo, esperaBaseMs, esperaMaximaMs }`                                                                                                                                                                   |
 
+`crearCliente` y `crearClienteInterno` aceptan además `modo` (`"humano"` por defecto, o `"bot"`) y `bot` (ajustes del modo bot, solo válido con `modo: "bot"`): ver [api.md](./api.md#modo-bot) y, para `./internal`, [api.md](./api.md#modo-bot-interno). Incluye `bot.siVerificacionFalla` (`"no_enviar"` por defecto, o `"enviar"`: usa este último en un cliente de OTP). La caché de existencia del modo bot vive en el cliente: crea uno por proceso, no uno por request (en Workers anula la caché y gasta el cupo de 120 consultas/hora).
+
 Credenciales: `crearCliente` → `apiKey`; `crearClienteAdmin` / `crearClienteInterno` → `obtenerToken` (requerido) e `invalidarToken(tokenRechazado)` (opcional, sin él no hay reintento ante `401`), un proveedor de tokens de servicio de Auth. Una opción inválida lanza `ErrorConfiguracion` al construir el cliente.
 
 ### `baseUrl`

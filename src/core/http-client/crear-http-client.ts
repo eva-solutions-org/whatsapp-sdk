@@ -144,11 +144,10 @@ const prepararCuerpo = (body: unknown): CuerpoPreparado | null => {
 const esErrorAbort = (err: unknown): boolean =>
   err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
 
-/** undici reporta un redirect con `redirect: "error"` en el `cause` de un TypeError. */
-const esErrorRedirect = (err: unknown): boolean =>
-  err instanceof TypeError &&
-  (/redirect/i.test(err.message) ||
-    (err.cause instanceof Error && /redirect/i.test(err.cause.message)));
+/** Con `redirect: "manual"`: 3xx en Node y Workers, `opaqueredirect` en navegadores. */
+const esRespuestaRedirect = (response: Response): boolean =>
+  response.type === "opaqueredirect" ||
+  (response.status >= 300 && response.status < 400 && response.status !== 304);
 
 interface ResultadoIntento<T> {
   resultado: Resultado<T>;
@@ -184,7 +183,8 @@ const leerJson = async (response: Response): Promise<{ texto: string; json: unkn
  *
  * Política:
  * - Siempre retorna `Resultado<T>`; nunca lanza por un fallo de red o HTTP.
- * - `redirect: "error"`: no sigue redirects (evita filtrar credenciales a otro host).
+ * - `redirect: "manual"`: no sigue redirects (evita filtrar credenciales a otro host); `"error"`
+ *   no existe en Cloudflare Workers (`fetch` lanza TypeError).
  * - Timeout por intento + `clientSignal` + `signal` de la operación, combinados.
  * - Reintentos por defecto solo en GET/DELETE (override por operación: `reintentar`) ante
  *   red/timeout, 5xx y 429, con backoff exponencial y
@@ -319,7 +319,7 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       const init: RequestInit = {
         method,
         headers,
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.any(signals),
       };
       if (cuerpo.contenido !== undefined) {
@@ -336,10 +336,11 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       if (esErrorAbort(err)) {
         return { resultado: mapearErrorAbortExterno(), reintentable: false };
       }
-      if (esErrorRedirect(err)) {
-        return { resultado: mapearErrorRedirect(), reintentable: false };
-      }
       return { resultado: mapearErrorRedTecnico(), reintentable: true };
+    }
+
+    if (esRespuestaRedirect(response)) {
+      return { resultado: mapearErrorRedirect(), reintentable: false };
     }
 
     const intento = await procesarRespuesta(response, schemaRespuesta, modo);

@@ -2,8 +2,11 @@ import { crearFacadeBilling } from "../../features/billing/index.js";
 import type { FacadeBilling } from "../../features/billing/index.js";
 import { crearFacadeBufferWs } from "../../features/buffer-ws/index.js";
 import type { FacadeBufferWs } from "../../features/buffer-ws/index.js";
+import { crearFacadeChats } from "../../features/chats/index.js";
+import type { FacadeChats } from "../../features/chats/index.js";
 import { crearFacadeMensajes } from "../../features/mensajes/index.js";
-import type { FacadeMensajes } from "../../features/mensajes/index.js";
+import { aplicarModoBot, resolverModoBot } from "../../features/modo-bot/index.js";
+import type { FacadeMensajesBot, OpcionesModoBot } from "../../features/modo-bot/index.js";
 import { crearFacadeProgramados } from "../../features/programados/index.js";
 import type { FacadeProgramados } from "../../features/programados/index.js";
 import { crearFacadeSeguridad } from "../../features/seguridad/index.js";
@@ -22,14 +25,22 @@ import type { OpcionesBaseCliente } from "./construir-http-client.js";
 /**
  * Opciones de `crearCliente`: las comunes (`OpcionesBaseCliente`) más `apiKey`
  * (string no vacío; se envía como `x-api-key` y NUNCA aparece en mensajes de error).
+ *
+ * - `modo`: `"humano"` (default) envía tal cual, sin llamadas extra. `"bot"` hace que cada envío
+ *   individual de `mensajes` verifique el número, marque leído si se pasan `messageIds`, muestre
+ *   "escribiendo" un tiempo proporcional al texto y recién entonces envíe.
+ * - `bot`: ajustes del modo bot (`OpcionesModoBot`); solo válido con `modo: "bot"`.
  */
 export interface OpcionesCliente extends OpcionesBaseCliente {
   apiKey: string;
+  modo?: "humano" | "bot";
+  bot?: OpcionesModoBot;
 }
 
 /** Cliente de la API pública (x-api-key): un namespace por feature. */
 export interface ClienteWhatsapp {
-  readonly mensajes: FacadeMensajes;
+  readonly mensajes: FacadeMensajesBot;
+  readonly chats: FacadeChats;
   readonly sesion: FacadeSesion;
   readonly programados: FacadeProgramados;
   readonly webhooksFallidos: FacadeWebhooksFallidos;
@@ -42,8 +53,8 @@ export interface ClienteWhatsapp {
 /**
  * Factory principal del SDK (superficie `.`, autenticada con `x-api-key`).
  *
- * @throws {ErrorConfiguracion} Si `apiKey`, `baseUrl`, `timeout` o `reintentos` son
- *   inválidos. Son las ÚNICAS excepciones: error de programación, no flujo de negocio.
+ * @throws {ErrorConfiguracion} Si `apiKey`, `baseUrl`, `timeout`, `reintentos`, `modo` o `bot`
+ *   son inválidos. Son las ÚNICAS excepciones: error de programación, no flujo de negocio.
  *   Los mensajes NUNCA incluyen el valor de `apiKey` ni de `baseUrl`.
  */
 export const crearCliente = (opciones: OpcionesCliente): ClienteWhatsapp => {
@@ -57,10 +68,18 @@ export const crearCliente = (opciones: OpcionesCliente): ClienteWhatsapp => {
     throw new ErrorConfiguracion("apiKey es requerido y debe ser string no vacío");
   }
 
+  const configBot = resolverModoBot(opciones.modo, opciones.bot);
+
   const http = construirHttpClient(opciones, autenticadorApiKey(opciones.apiKey));
+  const chats = crearFacadeChats(http);
+  const mensajes = crearFacadeMensajes(http);
 
   return {
-    mensajes: crearFacadeMensajes(http),
+    mensajes:
+      configBot === undefined
+        ? mensajes
+        : aplicarModoBot({ mensajes, chats, config: configBot, signal: opciones.signal }),
+    chats,
     sesion: crearFacadeSesion(http),
     programados: crearFacadeProgramados(http),
     webhooksFallidos: crearFacadeWebhooksFallidos(http),

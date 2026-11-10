@@ -32,6 +32,19 @@ export type {
 
 // Tipos públicos de cada feature (el index.ts de cada feature exporta nombres únicos)
 export type * from "./features/mensajes/index.js";
+export type * from "./features/chats/index.js";
+export type {
+  AdvertenciaBot,
+  FacadeMensajesBot,
+  OpcionesEnvioBot,
+  OpcionesEscrituraBot,
+  OpcionesModoBot,
+  PoliticaFalloVerificacion,
+} from "./features/modo-bot/index.js";
+export {
+  CODIGO_NUMERO_SIN_WHATSAPP,
+  CODIGO_VERIFICACION_NO_DISPONIBLE,
+} from "./features/modo-bot/index.js";
 export type * from "./features/sesion/index.js";
 export type * from "./features/programados/index.js";
 export type * from "./features/webhooks-fallidos/index.js";

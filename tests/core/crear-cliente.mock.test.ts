@@ -18,6 +18,7 @@ describe("crearCliente", () => {
     expect(Object.keys(cliente).sort()).toEqual([
       "billing",
       "bufferWs",
+      "chats",
       "mensajes",
       "programados",
       "seguridad",

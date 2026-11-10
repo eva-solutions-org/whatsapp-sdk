@@ -20,12 +20,32 @@
 
 import { crearHttpClientConToken } from "./core/cliente/index.js";
 import type { OpcionesClienteConToken } from "./core/cliente/index.js";
+import { crearFacadeChatsInternos } from "./features/internal-chats/index.js";
+import type { FacadeChatsInternos } from "./features/internal-chats/index.js";
 import { crearFacadeMensajesInternos } from "./features/internal-mensajes/index.js";
 import type { FacadeMensajesInternos } from "./features/internal-mensajes/index.js";
+import { aplicarModoBotInterno, resolverModoBot } from "./features/modo-bot/index.js";
+import type { OpcionesModoBot } from "./features/modo-bot/index.js";
+
+/**
+ * Opciones de `crearClienteInterno`: las de los clientes con token (`OpcionesClienteConToken`)
+ * más el modo bot.
+ *
+ * - `modo`: `"humano"` (default) envía tal cual, sin llamadas extra. `"bot"` hace que cada
+ *   `mensajes.enviar` verifique el número, muestre "escribiendo" un tiempo proporcional al texto
+ *   y recién entonces envíe. No marca leído (no existe en la vía interna).
+ * - `bot`: ajustes del modo bot (`OpcionesModoBot`, los mismos que el cliente público); solo
+ *   válido con `modo: "bot"`. `alAdvertir` nunca recibe el paso `"leer"`.
+ */
+export type OpcionesClienteInterno = OpcionesClienteConToken & {
+  modo?: "humano" | "bot";
+  bot?: OpcionesModoBot;
+};
 
 /** Cliente `./internal`. */
 export interface ClienteInterno {
   readonly mensajes: FacadeMensajesInternos;
+  readonly chats: FacadeChatsInternos;
 }
 
 /**
@@ -34,12 +54,22 @@ export interface ClienteInterno {
  * `obtenerToken` entrega el token de servicio vigente (el proveedor lo cachea y renueva); el token
  * nunca aparece en mensajes de error.
  *
- * @throws {ErrorConfiguracion} `obtenerToken`, `invalidarToken`, `baseUrl`, `timeout` o
- *   `reintentos` inválidos (error de programación, no flujo de negocio).
+ * @throws {ErrorConfiguracion} `obtenerToken`, `invalidarToken`, `baseUrl`, `timeout`,
+ *   `reintentos`, `modo` o `bot` inválidos (error de programación, no flujo de negocio).
  */
-export const crearClienteInterno = (opciones: OpcionesClienteConToken): ClienteInterno => ({
-  mensajes: crearFacadeMensajesInternos(crearHttpClientConToken(opciones)),
-});
+export const crearClienteInterno = (opciones: OpcionesClienteInterno): ClienteInterno => {
+  const configBot = resolverModoBot(opciones.modo, opciones.bot);
+  const http = crearHttpClientConToken(opciones);
+  const chats = crearFacadeChatsInternos(http);
+  const mensajes = crearFacadeMensajesInternos(http);
+  return {
+    mensajes:
+      configBot === undefined
+        ? mensajes
+        : aplicarModoBotInterno({ mensajes, chats, config: configBot, signal: opciones.signal }),
+    chats,
+  };
+};
 
 export { crearHttpClientConToken } from "./core/cliente/index.js";
 export type { OpcionesClienteConToken } from "./core/cliente/index.js";
@@ -54,6 +84,22 @@ export type {
 } from "./core/types/index.js";
 export type { OpcionesOperacion } from "./core/validacion/index.js";
 
+export type {
+  OpcionesModoBot,
+  OpcionesEscrituraBot,
+  AdvertenciaBot,
+  PoliticaFalloVerificacion,
+} from "./features/modo-bot/index.js";
+export {
+  CODIGO_NUMERO_SIN_WHATSAPP,
+  CODIGO_VERIFICACION_NO_DISPONIBLE,
+} from "./features/modo-bot/index.js";
+export type {
+  FacadeChatsInternos,
+  ExistenciaNumeroInterno,
+  IndicarEscrituraInternoInput,
+  VerificarExistenciaInternoInput,
+} from "./features/internal-chats/index.js";
 export type { FacadeMensajesInternos } from "./features/internal-mensajes/index.js";
 export type {
   EnviarMediaInput,

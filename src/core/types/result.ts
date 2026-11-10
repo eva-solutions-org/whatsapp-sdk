@@ -18,7 +18,8 @@
  *   rechazó antes de enviar (validación 422, ruta o cuerpo inválidos, fallo al obtener el token).
  * - `requestId`: header `x-request-id` de la respuesta, para soporte y trazabilidad.
  * - `detalles`: cuerpo `detalles` de un 422 (validación Zod aplanada: `fieldErrors`/`formErrors`).
- * - `codigoApi`: `error.code` de las respuestas `{ error: { code, message } }` (token de servicio).
+ * - `codigoApi`: `error.code` de las respuestas `{ error: { code, message } }` (token de servicio),
+ *   `numero_sin_whatsapp` (404 local) o `verificacion_no_disponible` (local, reintentable) del modo bot.
  * - `retryAfter` (solo 429): segundos sugeridos por `Retry-After`.
  */
 

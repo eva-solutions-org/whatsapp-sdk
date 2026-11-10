@@ -15,12 +15,14 @@ Referencia de la superficie pública, por subpath. Los tipos de entrada y respue
 | `fetch`      | no          | Override (tracing, tests). Default `globalThis.fetch`                   |
 | `signal`     | no          | `AbortSignal` global: cancela todas las operaciones en vuelo            |
 | `reintentos` | no          | `{ maximo?, esperaBaseMs?, esperaMaximaMs? }`                           |
+| `modo`       | no          | `"humano"` (default) o `"bot"`. Ver [Modo bot](#modo-bot)               |
+| `bot`        | no          | Ajustes del modo bot (`OpcionesModoBot`); solo con `modo: "bot"`        |
 
-Lanza `ErrorConfiguracion` (síncrono) si `apiKey`, `baseUrl`, `timeout` o `reintentos` son inválidos.
+Lanza `ErrorConfiguracion` (síncrono) si `apiKey`, `baseUrl`, `timeout`, `reintentos`, `modo` o `bot` son inválidos.
 
 ### Namespaces
 
-`cliente.mensajes`, `.sesion`, `.programados`, `.webhooksFallidos`, `.bufferWs`, `.billing`, `.seguridad`, `.webhookSecret`.
+`cliente.mensajes`, `.chats`, `.sesion`, `.programados`, `.webhooksFallidos`, `.bufferWs`, `.billing`, `.seguridad`, `.webhookSecret`.
 
 #### `cliente.mensajes`
 
@@ -36,6 +38,48 @@ Lanza `ErrorConfiguracion` (síncrono) si `apiKey`, `baseUrl`, `timeout` o `rein
 - Media: `url` y `file` son mutuamente excluyentes (uno solo). `file` es un `Blob` o `{ bytes: Uint8Array, tipoContenido, nombre? }`; `tipoContenido` es obligatorio porque la API valida el MIME.
 - La media se envía **siempre como multipart**: la API valida esos endpoints solo como `multipart/form-data` (un JSON se leería como formulario vacío y daría 422).
 - Ningún `POST` se reintenta.
+
+#### `cliente.chats`
+
+Primitivas de chat (`/v1/chats/*`, `/v1/presence`). Todas con `x-api-key`, no cobran y ningún `POST` se reintenta.
+
+| Método                                           | Endpoint                        | Notas                                                                                                 |
+| ------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `indicarEscritura({ phone, estado, segundos? })` | `POST /v1/chats/{phone}/typing` | `estado`: `escribiendo` \| `grabando` \| `pausa`; `segundos` 1 a 25 (vuelve a pausa solo)             |
+| `verificarExistencia({ phone })`                 | `GET /v1/chats/{phone}/exists`  | `{ exists }`. `429` al pasar de 120 consultas/hora por número remitente; la API cachea 6 h por número |
+| `marcarLeido({ phone, messageIds })`             | `POST /v1/chats/{phone}/read`   | 1 a 50 ids (`data.messageId` de los eventos `message`); la API responde 200 aunque un id no exista    |
+| `cambiarPresencia({ estado })`                   | `POST /v1/presence`             | `en_linea` \| `desconectado`                                                                          |
+
+#### Modo bot
+
+Con `crearCliente({ modo: "bot" })`, cada `enviarTexto`, `enviarImagen`, `enviarVideo`, `enviarGif`, `enviarPdf` y `enviarUbicacion` hace, en orden:
+
+1. **Verificar** que el número tenga WhatsApp (`exists`). Caché en memoria por número y por cliente: un "sí existe" se recuerda `ttlExisteMs` (7 días); un "no existe", `ttlInexistenteMs` (15 min, corto porque el número puede registrarse después). Envíos simultáneos al mismo número comparten una consulta. Si no existe, devuelve `404` con `origen: "local"` y `codigoApi: "numero_sin_whatsapp"` y **no envía**. Si la consulta de un número no cacheado **falla** (`429`, `503` u otro error de red o de la API; no un `exists: false`), manda `bot.siVerificacionFalla`: con `"no_enviar"` (default) devuelve un error con `origen: "local"` y `codigoApi: "verificacion_no_disponible"`, conserva el `codigo` y los datos de la causa (`retryAfter` en un `429`) y **no envía** (no salió nada: reintentar es seguro); con `"enviar"` avisa por `alAdvertir` y envía. Un cliente de OTP, donde entregar el código pesa más que la cautela, debería usar `"enviar"`. Un número ya cacheado como existente no depende de la consulta.
+2. **Marcar leído** `opciones.messageIds` (si se pasan: los ids de los mensajes del contacto que respondes).
+3. **Escribir**: `indicarEscritura` + espera de `baseMs + msPorCaracter × largo` con variación aleatoria `± variacion` aplicada sobre el valor ya recortado a `topeMs` (cerca del tope también varía) y tope `topeMs`, que nunca se supera. Media con caption usa el largo del caption; media o ubicación sin texto, `mediaMs`. No hay pausas de "distracción".
+4. **Enviar**.
+
+Los pasos 2 y 3 son best-effort: si fallan se avisa por `bot.alAdvertir({ paso, error })` y **el envío continúa**. Un fallo de verificación no se cachea. Cancelar (`signal` del cliente o de la operación) corta las esperas y devuelve el error de abort (`503`, `origen: "transporte"`) sin enviar; la consulta de existencia compartida entre envíos simultáneos solo obedece al `signal` del cliente, así que si un llamador aborta los demás reciben igual su resultado.
+
+**La caché es por cliente.** Crear un cliente por request (p. ej. en Cloudflare Workers) la anula: cada envío vuelve a consultar y gasta el cupo de 120 consultas/hora. Crea el cliente una sola vez por proceso o aislado, o pon `verificarExistencia: false`. Con `modo: "humano"` no hay ninguna llamada extra y `messageIds` se ignora. `enviarLote` no pasa por el modo bot. La API ya serializa los envíos por número: el SDK no añade fila propia.
+
+| `bot.…`                   | Default             | Descripción                                                                                    |
+| ------------------------- | ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `verificarExistencia`     | `true`              | `false` omite el paso 1 (p. ej. OTP: ahorra el cupo de 120/hora)                               |
+| `siVerificacionFalla`     | `"no_enviar"`       | `"no_enviar"`                                                                                  | `"enviar"`: qué hacer si la consulta de un número no cacheado falla |
+| `ttlExisteMs`             | `604_800_000` (7 d) | `0` = no cachear positivos                                                                     |
+| `ttlInexistenteMs`        | `900_000` (15 min)  | `0` = no cachear negativos                                                                     |
+| `escritura.baseMs`        | `600`               | Tiempo fijo del texto                                                                          |
+| `escritura.msPorCaracter` | `40`                | Se suma por carácter del texto                                                                 |
+| `escritura.variacion`     | `0.25`              | Fracción 0 a 1, `±` al azar                                                                    |
+| `escritura.topeMs`        | `6000`              | Máximo (0 a 25 000), nunca se supera; `0` desactiva el indicador y la espera                   |
+| `escritura.mediaMs`       | `1200`              | Media o ubicación sin texto                                                                    |
+| `alAdvertir`              | —                   | `({ paso: "verificar" \| "leer" \| "escribir", error }) => void`                               |
+| `aleatorio`               | `Math.random`       | `() => [0, 1)`; inyéctalo para tests deterministas (un valor fuera de rango se acota a [0, 1]) |
+
+La validación del teléfono corre antes: un `phone` inválido devuelve el `422` sin llamadas extra. Cualquier otro input inválido se detecta en el envío (después de los pasos previos).
+
+El mismo modo bot existe en `./internal` con matices: ver [Modo bot interno](#modo-bot-interno).
 
 #### `cliente.sesion`
 
@@ -143,7 +187,7 @@ type ErrorResultado = {
   origen: "api" | "transporte" | "local"; // quién produjo el error (ver abajo)
   requestId?: string; // header x-request-id, para soporte
   detalles?: unknown; // 422: { formErrors, fieldErrors }
-  codigoApi?: string; // error.code de las respuestas { error: { code, message } }
+  codigoApi?: string; // error.code de las respuestas { error: { code, message } }; "numero_sin_whatsapp" (404 local) o "verificacion_no_disponible" (local, reintentable) del modo bot
   retryAfter?: number; // solo 429, en segundos
 };
 ```
@@ -209,7 +253,7 @@ Las credenciales y los permisos de un service client viven en Auth; Whatsapp-api
 
 ### `crearClienteInterno(opciones): ClienteInterno`
 
-Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el token lleva `aud: whatsapp-api` y el permiso del tipo de mensaje). Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send`. Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
+Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el token lleva `aud: whatsapp-api` y el permiso del tipo de mensaje) más `modo` y `bot` (ver [Modo bot interno](#modo-bot-interno)). Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send` e `interno.chats` (ver [Chats internos](#chats-internos)). Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
 
 | Forma | Campos                                                                                                            |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
@@ -225,6 +269,26 @@ Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el t
 | `422`    | Body inválido (`detalles`) o `sourcePhone` desconocido                                                        |
 | `429`    | Rate limit (`retryAfter`)                                                                                     |
 | `503`    | La sesión del `sourcePhone` no está disponible, o red/timeout (ambiguo: el mensaje pudo salir)                |
+
+### Chats internos
+
+`interno.chats`: primitivas de chat con token de servicio. No cobran, valen los mismos permisos que el envío (`messages:send:text` o `messages:send:media`) y la misma allowlist de `sourcePhone`. Validación local estricta (`strictObject`; `phone` y `sourcePhone` de 7 a 20 caracteres): una entrada inválida devuelve `422` con `origen: "local"` sin llamar a la red. No hay marcar leído ni presencia en la vía interna.
+
+| Método                                                        | Endpoint                                             | Notas                                                                                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `verificarExistencia({ phone, sourcePhone })`                 | `GET /v1/internal/chats/{phone}/exists?sourcePhone=` | `{ exists }`. `429` al pasar de 120 consultas/hora por número remitente (cupo compartido con la vía pública); la API cachea 6 h por número |
+| `indicarEscritura({ phone, sourcePhone, estado, segundos? })` | `POST /v1/internal/chats/{phone}/typing`             | `estado`: `escribiendo` \| `grabando` \| `pausa`; `segundos` 1 a 25 (vuelve a pausa solo)                                                  |
+
+Errores: los mismos que el envío (`401` reintentado una vez con token nuevo, `403` incluido `codigoApi: "source_phone_not_allowed"`, `422`, `429` con `retryAfter`, `503`). El `POST` de `typing` solo se reintenta ante el `401`; el `GET` de `exists` además sigue la política de reintentos del cliente.
+
+### Modo bot interno
+
+`crearClienteInterno({ ..., modo: "bot", bot })` envuelve `mensajes.enviar` (texto y media) con el mismo núcleo que el modo bot público: **verificar** (caché por cliente, consultas simultáneas compartidas, `numero_sin_whatsapp`, `verificacion_no_disponible` y `bot.siVerificacionFalla`), **escribir** (misma fórmula de tiempo) y **enviar**; cancelación con `signal` del cliente o de la operación. Los ajustes `bot.…` y sus defaults son los de la [tabla del modo bot](#modo-bot). Diferencias con el público:
+
+- No hay paso de marcar leído: `enviar` no acepta `messageIds` y `alAdvertir` nunca recibe el paso `"leer"`.
+- Las llamadas de `exists` y `typing` salen con el `sourcePhone` del envío. La caché se indexa por destino (que un número tenga WhatsApp no depende del remitente), y las consultas simultáneas al mismo destino y con el mismo `sourcePhone` comparten una sola llamada; con otro `sourcePhone` no (un remitente sin allowlist, sesión o cupo no contagia su error a otro).
+- Un `phone` que no cumple el formato estricto del público (7 a 15 dígitos, sin `+`) o un `sourcePhone` inválido pasa directo al envío y responde lo mismo que en modo humano, sin pasos de bot. Un input nulo devuelve el `422` local.
+- Con `modo: "humano"` (default) no hay llamadas extra; `bot` sin `modo: "bot"` o un `modo` desconocido lanzan `ErrorConfiguracion`.
 
 ### Autenticación con token de servicio
 

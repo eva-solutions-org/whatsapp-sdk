@@ -15,7 +15,7 @@
 | Amenaza                                            | Mitigación en el SDK                                                                                                         |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Credencial enviada a un destino inseguro o ambiguo | `baseUrl` validada: `https` (o `http` en loopback), sin credenciales, path, query ni fragmento                               |
-| Redirect hacia otro host que recibe los headers    | `redirect: "error"`: se rechaza con `503` (`origen: "transporte"`)                                                           |
+| Redirect hacia otro host que recibe los headers    | `redirect: "manual"`: se rechaza con `503` (`origen: "transporte"`)                                                           |
 | Credencial en logs o errores                       | Ningún mensaje la incluye; el `error` de la API se recorta a 500 caracteres                                                  |
 | Webhook falsificado                                | HMAC-SHA256 con comparación en tiempo constante; fail-closed (`401`)                                                         |
 | Webhook con cuerpo enorme                          | Tope de 1 MiB por defecto (`413`)                                                                                            |
