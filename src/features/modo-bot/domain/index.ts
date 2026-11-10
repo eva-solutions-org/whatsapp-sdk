@@ -1,4 +1,8 @@
-export { calcularDuracionEscritura, resolverOpcionesBot } from "./modo-bot-config.js";
+export {
+  calcularDuracionEscritura,
+  resolverModoBot,
+  resolverOpcionesBot,
+} from "./modo-bot-config.js";
 export type {
   AdvertenciaBot,
   ConfigModoBot,

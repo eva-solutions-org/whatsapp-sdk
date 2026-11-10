@@ -5,7 +5,7 @@ import type { FacadeBufferWs } from "../../features/buffer-ws/index.js";
 import { crearFacadeChats } from "../../features/chats/index.js";
 import type { FacadeChats } from "../../features/chats/index.js";
 import { crearFacadeMensajes } from "../../features/mensajes/index.js";
-import { aplicarModoBot, resolverOpcionesBot } from "../../features/modo-bot/index.js";
+import { aplicarModoBot, resolverModoBot } from "../../features/modo-bot/index.js";
 import type { FacadeMensajesBot, OpcionesModoBot } from "../../features/modo-bot/index.js";
 import { crearFacadeProgramados } from "../../features/programados/index.js";
 import type { FacadeProgramados } from "../../features/programados/index.js";
@@ -68,14 +68,7 @@ export const crearCliente = (opciones: OpcionesCliente): ClienteWhatsapp => {
     throw new ErrorConfiguracion("apiKey es requerido y debe ser string no vacío");
   }
 
-  const modo = opciones.modo ?? "humano";
-  if (modo !== "humano" && modo !== "bot") {
-    throw new ErrorConfiguracion('modo debe ser "humano" o "bot"');
-  }
-  if (modo === "humano" && opciones.bot !== undefined) {
-    throw new ErrorConfiguracion('bot solo es válido con modo "bot"');
-  }
-  const configBot = modo === "bot" ? resolverOpcionesBot(opciones.bot) : undefined;
+  const configBot = resolverModoBot(opciones.modo, opciones.bot);
 
   const http = construirHttpClient(opciones, autenticadorApiKey(opciones.apiKey));
   const chats = crearFacadeChats(http);

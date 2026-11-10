@@ -184,3 +184,23 @@ export const calcularDuracionEscritura = ({
   const factor = 1 + escritura.variacion * (2 * azarAcotado - 1);
   return Math.round(Math.min(escritura.topeMs, Math.min(escritura.topeMs, nominal) * factor));
 };
+
+/**
+ * Valida `modo` y `bot` de `crearCliente` / `crearClienteInterno` y devuelve la configuración
+ * resuelta, o `undefined` en modo humano.
+ *
+ * @throws {ErrorConfiguracion} `modo` desconocido, `bot` con modo humano o `bot` inválido.
+ */
+export const resolverModoBot = (
+  modo: "humano" | "bot" | undefined,
+  bot: OpcionesModoBot | undefined,
+): ConfigModoBot | undefined => {
+  const modoEfectivo = modo ?? "humano";
+  if (modoEfectivo !== "humano" && modoEfectivo !== "bot") {
+    throw new ErrorConfiguracion('modo debe ser "humano" o "bot"');
+  }
+  if (modoEfectivo === "humano" && bot !== undefined) {
+    throw new ErrorConfiguracion('bot solo es válido con modo "bot"');
+  }
+  return modoEfectivo === "bot" ? resolverOpcionesBot(bot) : undefined;
+};

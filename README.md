@@ -23,7 +23,7 @@ SDK TypeScript para consumir el servicio Whatsapp-api. Simple por defecto, con c
 | `@eva_solutions/whatsapp-sdk/webhooks` | Verificación de la firma HMAC de los webhooks y eventos tipados                                                     | secreto del webhook                       |
 | `@eva_solutions/whatsapp-sdk/ws`       | `conectarWs`: eventos en tiempo real con reconexión                                                                 | `x-api-key` (en `Sec-WebSocket-Protocol`) |
 | `@eva_solutions/whatsapp-sdk/admin`    | `crearClienteAdmin`: service clients, sesiones, QR del sistema, billing, pagos, exención, auditoría                 | token Bearer de servicio (Auth)           |
-| `@eva_solutions/whatsapp-sdk/internal` | `crearClienteInterno`: envío interno de mensajes                                                                    | token Bearer de servicio (Auth)           |
+| `@eva_solutions/whatsapp-sdk/internal` | `crearClienteInterno`: envío interno de mensajes, primitivas de chat y modo bot                                     | token Bearer de servicio (Auth)           |
 
 Cada subpath existe en ESM y CJS. Quien no usa un subpath no lo carga.
 
@@ -175,6 +175,27 @@ const r = await interno.mensajes.enviar({
 ```
 
 El token necesita `aud: whatsapp-api` y el permiso del tipo de mensaje (`messages:send:text` o `messages:send:media`). Su `sub` debe tener un registro habilitado en Whatsapp-api (`admin.serviceClients.crear`), si no la API responde `403`.
+
+#### Modo bot y chats internos
+
+Igual que el cliente público, `crearClienteInterno` acepta `modo: "bot"` (y `bot`, los mismos ajustes) para que una notificación parezca humana: cada `mensajes.enviar` verifica que el destino tenga WhatsApp (caché por cliente), muestra "escribiendo" un tiempo proporcional al texto y recién entonces envía. No marca leído (no existe en la vía interna), así que `messageIds` no aplica. Sin `modo` no hay llamadas extra.
+
+```typescript
+const interno = crearClienteInterno({
+  baseUrl: process.env.EVA_WHATSAPP_BASE_URL!,
+  obtenerToken: () => proveedor.getToken(),
+  invalidarToken: proveedor.invalidate,
+  modo: "bot",
+  bot: { siVerificacionFalla: "enviar" }, // opcional
+});
+
+const r = await interno.mensajes.enviar({ phone, message, sourcePhone });
+if (!r.success && r.codigoApi === "numero_sin_whatsapp") {
+  // el número no tiene WhatsApp: no se envió nada
+}
+```
+
+Las primitivas también se pueden usar sueltas: `interno.chats.verificarExistencia({ phone, sourcePhone })` e `interno.chats.indicarEscritura({ phone, sourcePhone, estado, segundos? })`. Basta el permiso de envío (`messages:send:text` o `messages:send:media`). El cupo de 120 consultas/hora de `exists` es por número remitente y se comparte con la vía pública. Detalle en [docs/api.md](./docs/api.md#7-internal-internal).
 
 ## Result Pattern y códigos
 

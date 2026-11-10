@@ -79,6 +79,8 @@ Los pasos 2 y 3 son best-effort: si fallan se avisa por `bot.alAdvertir({ paso, 
 
 La validación del teléfono corre antes: un `phone` inválido devuelve el `422` sin llamadas extra. Cualquier otro input inválido se detecta en el envío (después de los pasos previos).
 
+El mismo modo bot existe en `./internal` con matices: ver [Modo bot interno](#modo-bot-interno).
+
 #### `cliente.sesion`
 
 | Método                                      | Endpoint                        | Notas                                                                                                         |
@@ -251,7 +253,7 @@ Las credenciales y los permisos de un service client viven en Auth; Whatsapp-api
 
 ### `crearClienteInterno(opciones): ClienteInterno`
 
-Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el token lleva `aud: whatsapp-api` y el permiso del tipo de mensaje). Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send`. Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
+Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el token lleva `aud: whatsapp-api` y el permiso del tipo de mensaje) más `modo` y `bot` (ver [Modo bot interno](#modo-bot-interno)). Expone `interno.mensajes.enviar(entrada, opciones?)` → `POST /v1/internal/messages/send` e `interno.chats` (ver [Chats internos](#chats-internos)). Entrada, una de dos formas (`strictObject`: mezclar `message` con `mediaUrl` se rechaza con 422 local):
 
 | Forma | Campos                                                                                                            |
 | ----- | ----------------------------------------------------------------------------------------------------------------- |
@@ -267,6 +269,26 @@ Mismas opciones que `crearClienteAdmin` (`obtenerToken`, `invalidarToken?`; el t
 | `422`    | Body inválido (`detalles`) o `sourcePhone` desconocido                                                        |
 | `429`    | Rate limit (`retryAfter`)                                                                                     |
 | `503`    | La sesión del `sourcePhone` no está disponible, o red/timeout (ambiguo: el mensaje pudo salir)                |
+
+### Chats internos
+
+`interno.chats`: primitivas de chat con token de servicio. No cobran, valen los mismos permisos que el envío (`messages:send:text` o `messages:send:media`) y la misma allowlist de `sourcePhone`. Validación local estricta (`strictObject`; `phone` y `sourcePhone` de 7 a 20 caracteres): una entrada inválida devuelve `422` con `origen: "local"` sin llamar a la red. No hay marcar leído ni presencia en la vía interna.
+
+| Método                                                        | Endpoint                                             | Notas                                                                                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `verificarExistencia({ phone, sourcePhone })`                 | `GET /v1/internal/chats/{phone}/exists?sourcePhone=` | `{ exists }`. `429` al pasar de 120 consultas/hora por número remitente (cupo compartido con la vía pública); la API cachea 6 h por número |
+| `indicarEscritura({ phone, sourcePhone, estado, segundos? })` | `POST /v1/internal/chats/{phone}/typing`             | `estado`: `escribiendo` \| `grabando` \| `pausa`; `segundos` 1 a 25 (vuelve a pausa solo)                                                  |
+
+Errores: los mismos que el envío (`401` reintentado una vez con token nuevo, `403` incluido `codigoApi: "source_phone_not_allowed"`, `422`, `429` con `retryAfter`, `503`). El `POST` de `typing` solo se reintenta ante el `401`; el `GET` de `exists` además sigue la política de reintentos del cliente.
+
+### Modo bot interno
+
+`crearClienteInterno({ ..., modo: "bot", bot })` envuelve `mensajes.enviar` (texto y media) con el mismo núcleo que el modo bot público: **verificar** (caché por cliente, consultas simultáneas compartidas, `numero_sin_whatsapp`, `verificacion_no_disponible` y `bot.siVerificacionFalla`), **escribir** (misma fórmula de tiempo) y **enviar**; cancelación con `signal` del cliente o de la operación. Los ajustes `bot.…` y sus defaults son los de la [tabla del modo bot](#modo-bot). Diferencias con el público:
+
+- No hay paso de marcar leído: `enviar` no acepta `messageIds` y `alAdvertir` nunca recibe el paso `"leer"`.
+- Las llamadas de `exists` y `typing` salen con el `sourcePhone` del envío. La caché se indexa por destino (que un número tenga WhatsApp no depende del remitente), y las consultas simultáneas al mismo destino y con el mismo `sourcePhone` comparten una sola llamada; con otro `sourcePhone` no (un remitente sin allowlist, sesión o cupo no contagia su error a otro).
+- Un `phone` que no cumple el formato estricto del público (7 a 15 dígitos, sin `+`) o un `sourcePhone` inválido pasa directo al envío y responde lo mismo que en modo humano, sin pasos de bot. Un input nulo devuelve el `422` local.
+- Con `modo: "humano"` (default) no hay llamadas extra; `bot` sin `modo: "bot"` o un `modo` desconocido lanzan `ErrorConfiguracion`.
 
 ### Autenticación con token de servicio
 

@@ -38,7 +38,7 @@ src/
     └── index.ts        # barrel: contrato público del feature
 ```
 
-Features por subpath: `mensajes`, `chats`, `modo-bot` (envoltorio de `mensajes` con comportamiento humano; no tiene `infrastructure`), `sesion`, `programados`, `webhooks-fallidos`, `buffer-ws`, `billing`, `seguridad`, `webhook-secret` (`.`); `webhooks` y `notificaciones` (`./webhooks`); `ws` y `notificaciones` (`./ws`); `admin-*` (`./admin`); `internal-mensajes` (`./internal`).
+Features por subpath: `mensajes`, `chats`, `modo-bot` (envoltorio de `mensajes` con comportamiento humano; no tiene `infrastructure`), `sesion`, `programados`, `webhooks-fallidos`, `buffer-ws`, `billing`, `seguridad`, `webhook-secret` (`.`); `webhooks` y `notificaciones` (`./webhooks`); `ws` y `notificaciones` (`./ws`); `admin-*` (`./admin`); `internal-mensajes` e `internal-chats` (`./internal`; su modo bot reutiliza el núcleo de `modo-bot`).
 
 `infrastructure/` existe solo donde hay un adaptador real: `webhooks` (HMAC y lectura limitada del body) y `ws` (construcción de la conexión). Los features que hablan HTTP no tienen adaptador: `application` recibe el `HttpClient` y lo llama directo (ver [ADR-003](./decisions.md#adr-003--sin-capa-adapter-por-feature)).
 
